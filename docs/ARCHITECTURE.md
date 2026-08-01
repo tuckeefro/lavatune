@@ -37,6 +37,8 @@ The divisions are deliberate. Audio analysis does not know about brightness, phy
 
 `media.py` polls `playerctl` on a separate thread. Metadata is optional and never participates in audio analysis.
 
+`doctor.py` checks platform and terminal capabilities, discovers local helper programs, and can open the normal capture path briefly to distinguish missing dependencies from an inaccessible or incorrect monitor source.
+
 `config.py` contains only settings that the current runtime consumes. Profiles change groups of settings; scenes change presentation; product presets combine both for common use.
 
 ## Coordinates and resizing

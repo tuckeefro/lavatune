@@ -6,6 +6,10 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 
 ### Added
 
+- Added an environment doctor with optional live PCM verification.
+- Added deterministic performance and distribution-content verification tools.
+- Added tag-driven GitHub prereleases with wheel, source archive, and checksums.
+- Added troubleshooting and measured performance documentation.
 - Documented the project's human direction and substantial Codex assistance.
 - Documented the privacy-first native macOS architecture and permission boundary.
 - Responsive terminal compositions for compact, narrow, and wide tiles.
@@ -16,6 +20,7 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 
 ### Changed
 
+- Made the package version single-source and bounded CI jobs with concurrency control.
 - Removed unused compatibility paths and configuration controls that no longer affected runtime behavior.
 - Added source comments around audio normalization, body motion, terminal scaling, and process boundaries.
 - Gave persistent bodies authored bass, voice, detail, and neutral identities.

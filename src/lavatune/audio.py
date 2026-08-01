@@ -15,6 +15,13 @@ from .config import AudioConfig
 from .text import sanitize_display_text
 
 
+CAPTURE_BINARIES: dict[str, str] = {
+    "pipewire": "pw-cat",
+    "pulse": "parec",
+    "ffmpeg": "ffmpeg",
+}
+
+
 @dataclass(slots=True)
 class AudioFrame:
     """One normalized analysis window consumed by the organism."""
@@ -55,6 +62,10 @@ class AudioCapture:
     def error(self) -> str | None:
         return self._error
 
+    def frames_received(self) -> int:
+        with self._lock:
+            return len(self._frames)
+
     def start(self) -> None:
         if self._thread is not None:
             return
@@ -89,20 +100,16 @@ class AudioCapture:
         )
 
     def _pick_backend(self, preferred: str) -> str:
-        binaries = {
-            "pipewire": "pw-cat",
-            "pulse": "parec",
-            "ffmpeg": "ffmpeg",
-        }
         if preferred != "auto":
-            if preferred not in binaries:
+            if preferred not in CAPTURE_BINARIES:
                 raise RuntimeError(f"Unsupported audio backend '{preferred}'")
-            if shutil.which(binaries[preferred]) is None:
+            if shutil.which(CAPTURE_BINARIES[preferred]) is None:
                 raise RuntimeError(
-                    f"Audio backend '{preferred}' requires '{binaries[preferred]}' in PATH."
+                    f"Audio backend '{preferred}' requires "
+                    f"'{CAPTURE_BINARIES[preferred]}' in PATH."
                 )
             return preferred
-        for backend, binary in binaries.items():
+        for backend, binary in CAPTURE_BINARIES.items():
             if shutil.which(binary):
                 return backend
         raise RuntimeError(

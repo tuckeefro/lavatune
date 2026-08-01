@@ -12,6 +12,7 @@ python3 -m venv .venv
 python -m pip install -e '.[dev]'
 python -m unittest discover -s tests -v
 ruff check .
+python scripts/benchmark.py --frames 20
 ```
 
 Use `lavatune --demo` when developing without an audio server. Tests must not require a live audio device, desktop session, or network connection.

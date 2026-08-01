@@ -1,5 +1,7 @@
 # Lavatune
 
+[![CI](https://github.com/tuckeefro/lavatune/actions/workflows/ci.yml/badge.svg)](https://github.com/tuckeefro/lavatune/actions/workflows/ci.yml)
+
 > **Naming note:** Lavatune is the project's working codename. The Python package and command keep that name during the alpha period so the implementation can stabilize before the public product name is chosen.
 
 Lavatune is a local-first, terminal-native acoustic organism for Linux. It occupies a small terminal tile, keeps recognizable floating bodies alive during silence, and turns system audio into buoyant motion, deformation, wall pressure, and brief afterglow.
@@ -15,6 +17,7 @@ The current implementation targets Linux. A lightweight native macOS sibling is 
 ## Features
 
 - reacts to system output through PipeWire, PulseAudio, or FFmpeg
+- diagnoses platform, terminal, backend, metadata, and live PCM readiness
 - distinguishes bass, voice, detail, cadence, and transients
 - recomposes the same body identities into micro, chimney, basin, and current habitats
 - displays optional local MPRIS media metadata
@@ -56,6 +59,14 @@ Run without live audio:
 ```bash
 lavatune --demo
 ```
+
+Check the machine and live audio path without entering the TUI:
+
+```bash
+lavatune --doctor
+```
+
+Use `--no-audio-probe` when only the installed programs and terminal capabilities should be checked. The doctor exits nonzero for a missing required backend or failed live PCM path, while optional media support and limited terminal color are warnings.
 
 Select an explicit backend or monitor source:
 
@@ -119,6 +130,16 @@ The compact tile integration accepts these environment variables:
 
 Older `CODEXDECK_LAVATUNE_*` names remain compatibility aliases during alpha.
 
+Common backend and source failures are covered in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md). The deterministic field benchmark and its measurement boundaries are documented in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+## Known limitations
+
+- Linux is the only implemented platform.
+- Audio capture depends on an installed `pw-cat`, `parec`, or PulseAudio-enabled `ffmpeg`.
+- Monitor aliases vary across distributions and audio-server configurations.
+- Browser MPRIS metadata may expose only the browser name.
+- Alpha configuration and presentation details may change before `1.0`.
+
 ## Development
 
 ```bash
@@ -126,6 +147,8 @@ python -m unittest discover -s tests -v
 ruff check .
 python -m build
 twine check dist/*
+python scripts/verify_dist.py dist
+python scripts/benchmark.py
 ```
 
 The tests use synthetic signals and a pseudo-terminal; they do not need a live audio server or network access. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) follows one frame through the program, and [`CONTRIBUTING.md`](CONTRIBUTING.md) covers contribution boundaries.

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lavatune"
-version = "0.1.0a1"
+dynamic = ["version"]
 description = "A terminal-native acoustic organism for Linux."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -30,6 +30,9 @@ dependencies = []
 Homepage = "https://github.com/tuckeefro/lavatune"
 Repository = "https://github.com/tuckeefro/lavatune.git"
 Issues = "https://github.com/tuckeefro/lavatune/issues"
+Changelog = "https://github.com/tuckeefro/lavatune/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/tuckeefro/lavatune#readme"
+Security = "https://github.com/tuckeefro/lavatune/security/policy"
 
 [project.optional-dependencies]
 dev = [
@@ -43,6 +46,9 @@ lavatune = "lavatune.__main__:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+
+[tool.setuptools.dynamic]
+version = { attr = "lavatune.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
