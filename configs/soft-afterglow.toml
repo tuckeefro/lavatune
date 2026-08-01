@@ -1,0 +1,26 @@
+fps = 30
+theme = "soft-afterglow"
+profile = "atlas"
+content_mode = "auto"
+
+[audio]
+backend = "auto"
+analysis = "atlas"
+sample_rate = 22050
+channels = 1
+frame_size = 1024
+
+[render]
+glyphs = " .,:;~oO@"
+palette = "soft-afterglow"
+show_stats = false
+scale = 3
+color_steps = 4
+
+[lava]
+blobs = 4
+drift = 0.28
+viscosity = 0.92
+reactivity = 1.0
+radius_min = 0.09
+radius_max = 0.22

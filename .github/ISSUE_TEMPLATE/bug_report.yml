@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible Lavatune problem.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include private media titles, usernames, paths, or audio device names without redacting them.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Linux distribution, Python, and terminal
+      placeholder: Fedora 42, Python 3.13, Alacritty
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Audio backend
+      options:
+        - Demo mode
+        - PipeWire
+        - PulseAudio
+        - FFmpeg
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Reproduction and observed behavior
+      description: Include tile dimensions and whether the dock was open when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I redacted private metadata from this report and its attachments.
+          required: true
