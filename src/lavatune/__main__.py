@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import __version__
 from .app import LavaTuneApp
 from .config import (
     BACKEND_NAMES,
@@ -12,6 +13,7 @@ from .config import (
     apply_cli_overrides,
     load_config,
 )
+from .doctor import format_report, inspect_environment
 from .text import sanitize_display_text
 
 
@@ -20,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="lavatune",
         description="A terminal-native acoustic organism for Linux.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", help="Path to a TOML config override.")
     parser.add_argument(
         "--theme",
@@ -95,12 +98,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run without live audio using a synthetic signal.",
     )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Check the local environment and audio path, then exit.",
+    )
+    parser.add_argument(
+        "--no-audio-probe",
+        action="store_true",
+        help="With --doctor, skip the short live PCM probe.",
+    )
     return parser
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    if args.no_audio_probe and not args.doctor:
+        parser.error("--no-audio-probe requires --doctor")
 
     if args.list_themes:
         for theme in DEFAULT_THEME_NAMES:
@@ -139,6 +155,11 @@ def main() -> int:
     except (OSError, TypeError, ValueError) as exc:
         print(f"Config error: {sanitize_display_text(str(exc), max_chars=500)}", file=sys.stderr)
         return 2
+
+    if args.doctor:
+        report = inspect_environment(config, probe_audio=not args.no_audio_probe)
+        print(format_report(report))
+        return report.exit_code
 
     app = LavaTuneApp(config, demo_mode=args.demo)
     try:
