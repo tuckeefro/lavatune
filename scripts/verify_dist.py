@@ -28,6 +28,7 @@ REQUIRED_SDIST_SUFFIXES = {
     "docs/DESIGN.md",
     "docs/MACOS.md",
     "scripts/benchmark.py",
+    "scripts/benchmark_render.py",
     "scripts/verify_dist.py",
 }
 

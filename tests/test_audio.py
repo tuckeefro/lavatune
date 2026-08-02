@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import math
+import os
+import select
+import struct
 import subprocess
 import unittest
+from collections import deque
+from unittest.mock import patch
 
-from lavatune.audio import AudioCapture
+from lavatune.audio import AudioCapture, AudioFrame
 from lavatune.config import AudioConfig
 
 
@@ -15,6 +21,27 @@ def capture_shell(backend: str = "pipewire", source: str | None = None) -> Audio
     capture._proc = None
     capture._stderr_tail = bytearray()
     return capture
+
+
+def atlas_analyzer() -> AudioCapture:
+    capture = AudioCapture.__new__(AudioCapture)
+    capture.config = AudioConfig(analysis="atlas", sample_rate=16000, frame_size=1024)
+    capture._atlas_history = deque([0.0] * 8, maxlen=8)
+    capture._atlas_last = 0.0
+    capture._atlas_lowpass = 0.0
+    capture._atlas_midpass = 0.0
+    capture._level_floor = 0.01
+    capture._level_ceiling = 0.18
+    capture._level_drive = 0.0
+    return capture
+
+
+def sine_chunk(frequency: float, sample_rate: int = 16000, size: int = 1024) -> bytes:
+    samples = [
+        int(math.sin(math.tau * frequency * index / sample_rate) * 12000)
+        for index in range(size)
+    ]
+    return struct.pack("<" + "h" * size, *samples)
 
 
 class FakeProcess:
@@ -41,6 +68,42 @@ class FakeProcess:
 
 
 class AudioProcessTests(unittest.TestCase):
+    def test_capture_queue_is_bounded_sequenced_and_wakes_a_waiter(self) -> None:
+        with patch("lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"):
+            capture = AudioCapture(AudioConfig())
+        try:
+            for sequence in range(12):
+                capture._publish(
+                    AudioFrame(0.1, [0.1] * 8, 0.0, 0.0, float(sequence + 1)),
+                    0.001,
+                )
+
+            readable, _, _ = select.select([capture.fileno()], [], [], 0.05)
+            frames = capture.drain_after(0)
+
+            self.assertEqual(readable, [capture.fileno()])
+            self.assertEqual(len(frames), 8)
+            self.assertEqual([item.sequence for item in frames], list(range(5, 13)))
+            frames_seen, analysis_seconds = capture.analysis_metrics()
+            self.assertEqual(frames_seen, 12)
+            self.assertAlmostEqual(analysis_seconds, 0.012)
+            capture.consume_signal()
+            with self.assertRaises(BlockingIOError):
+                os.read(capture.fileno(), 1)
+        finally:
+            capture.stop()
+
+    def test_atlas_single_pass_analysis_retains_coarse_tonal_contrast(self) -> None:
+        low_capture = atlas_analyzer()
+        high_capture = atlas_analyzer()
+
+        for _ in range(4):
+            low = low_capture._analyze_atlas(struct.unpack("<1024h", sine_chunk(120.0)))
+            high = high_capture._analyze_atlas(struct.unpack("<1024h", sine_chunk(4200.0)))
+
+        self.assertGreater(sum(low.bands[:3]), sum(low.bands[5:]) * 1.35)
+        self.assertGreater(sum(high.bands[5:]), sum(high.bands[:3]) * 1.35)
+
     def test_source_is_one_subprocess_argument(self) -> None:
         source = "monitor; touch /tmp/not-executed"
         capture = capture_shell(source=source)

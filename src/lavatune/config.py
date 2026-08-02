@@ -234,9 +234,9 @@ def apply_profile(config: AppConfig, profile_name: str | None) -> AppConfig:
             fps=min(22, max(config.fps, 18)),
             audio=replace(
                 config.audio,
-                analysis="atlas",
+                analysis="bands",
                 sample_rate=min(config.audio.sample_rate, 16000),
-                frame_size=max(config.audio.frame_size, 2048),
+                frame_size=1024,
             ),
             render=replace(
                 config.render,

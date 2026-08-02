@@ -6,12 +6,19 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from lavatune.app import (
+    FrameScheduler,
     UiState,
+    _changed_cell_runs,
+    _changed_sparse_runs,
     _compute_layout,
     _effective_cell_width,
+    _effective_fps,
     _init_colors,
     _palette_attr,
+    _should_draw_early,
 )
+from lavatune.audio import AudioFrame
+from lavatune.organism import AffectiveState, AudioForces
 
 
 def config(**render_values):
@@ -19,6 +26,83 @@ def config(**render_values):
 
 
 class LayoutTests(unittest.TestCase):
+    def test_activity_driven_cadence_spends_frames_only_when_needed(self) -> None:
+        app_config = SimpleNamespace(fps=22, profile="atlas")
+        silence = AudioFrame(0.0, [0.0] * 8, 0.0, 0.0, 0.0)
+        speech = AudioFrame(0.05, [0.08] * 8, 0.03, 0.05, 0.0)
+        music = AudioFrame(0.18, [0.24] * 8, 0.04, 0.12, 0.0)
+        transient = AudioFrame(0.20, [0.24] * 8, 0.30, 0.12, 0.0)
+
+        self.assertEqual(_effective_fps(app_config, silence), 2.0)
+        self.assertEqual(_effective_fps(app_config, speech), 4.0)
+        self.assertEqual(_effective_fps(app_config, music), 8.0)
+        self.assertEqual(_effective_fps(app_config, transient), 14.0)
+        app_config.profile = "power-save"
+        self.assertEqual(_effective_fps(app_config, transient), 6.0)
+
+    def test_mapped_gesture_keeps_afterglow_at_an_active_cadence(self) -> None:
+        app_config = SimpleNamespace(fps=22, profile="atlas")
+        silence = AudioFrame(0.0, [0.0] * 8, 0.0, 0.0, 0.0)
+
+        self.assertEqual(
+            _effective_fps(app_config, silence, AudioForces(transient=0.30)),
+            14.0,
+        )
+
+    def test_scheduler_holds_engaged_state_after_a_short_burst(self) -> None:
+        app_config = SimpleNamespace(fps=22, profile="atlas")
+        scheduler = FrameScheduler(immediate=False)
+        frame = AudioFrame(0.20, [0.24] * 8, 0.30, 0.12, 10.0)
+
+        scheduler.observe(
+            frame,
+            AudioForces(transient=0.40, energy=0.50),
+            AffectiveState(novelty=0.30),
+            0.40,
+            10.0,
+        )
+
+        self.assertEqual(scheduler.target_fps(app_config, 10.1), 14.0)
+        self.assertEqual(scheduler.physics_fps(10.1), 8.0)
+        self.assertEqual(scheduler.target_fps(app_config, 10.3), 8.0)
+        self.assertTrue(scheduler.consume_immediate())
+        self.assertEqual(scheduler.target_fps(app_config, 10.8), 2.0)
+
+    def test_sustained_release_does_not_extend_burst_forever(self) -> None:
+        app_config = SimpleNamespace(fps=22, profile="atlas")
+        scheduler = FrameScheduler(immediate=False)
+        quiet = AudioFrame(0.0, [0.0] * 8, 0.0, 0.0, 10.0)
+
+        scheduler.observe(quiet, AudioForces(), AffectiveState(release=0.30), 0.0, 10.0)
+        scheduler.observe(quiet, AudioForces(), AffectiveState(release=0.28), 0.0, 10.2)
+        scheduler.observe(quiet, AudioForces(), AffectiveState(release=0.24), 0.0, 10.4)
+
+        self.assertEqual(scheduler.burst_until, 10.22)
+        self.assertEqual(scheduler.target_fps(app_config, 10.5), 8.0)
+        self.assertEqual(scheduler.target_fps(app_config, 10.8), 2.0)
+
+    def test_faster_audio_cadence_can_wake_a_quiet_deadline(self) -> None:
+        self.assertTrue(_should_draw_early(10.30, 10.0, 10.0))
+        self.assertFalse(_should_draw_early(10.05, 10.0, 10.0))
+
+    def test_dirty_cell_runs_skip_unchanged_terminal_content(self) -> None:
+        previous = (("a", 1), ("b", 1), ("c", 2), ("d", 2))
+        current = (("a", 1), ("B", 1), ("c", 3), (" ", 0))
+
+        self.assertEqual(
+            _changed_cell_runs(previous, current),
+            [(1, "B", 1), (2, "c", 3), (3, " ", 0)],
+        )
+
+    def test_sparse_runs_clear_old_contours_without_scanning_blank_rows(self) -> None:
+        previous = {(2, 3): ("█", 1), (2, 4): ("█", 1), (8, 9): ("▘", 2)}
+        current = {(2, 4): ("█", 1), (2, 5): ("▐", 2)}
+
+        self.assertEqual(
+            _changed_sparse_runs(previous, current, 0),
+            [(2, 3, " ", 0), (2, 5, "▐", 2), (8, 9, " ", 0)],
+        )
+
     def test_palette_initialization_respects_terminal_pair_capacity(self) -> None:
         with (
             patch("lavatune.app.curses.start_color"),

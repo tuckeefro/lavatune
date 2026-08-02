@@ -5,9 +5,10 @@ from __future__ import annotations
 import curses
 import math
 import os
+import select
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -33,6 +34,8 @@ from .materials import (
 from .media import MediaInfo, MediaWatcher
 from .organism import (
     AcousticOrganism,
+    AffectiveState,
+    AffectiveTracker,
     AudioForceMapper,
     AudioForces,
     Body,
@@ -153,7 +156,7 @@ PRODUCT_PRESETS: dict[str, dict[str, object]] = {
         "profile": "atlas",
         "content": "auto",
         "fps": 22,
-        "analysis": "atlas",
+        "analysis": "bands",
         "reactivity": "conversational",
         "density": "medium",
     },
@@ -250,6 +253,94 @@ class UiState:
         return self.status if time.monotonic() < self.status_until else ""
 
 
+@dataclass
+class VisualCache:
+    key: tuple[object, ...] | None = None
+    cells: dict[tuple[int, int], tuple[str, int]] = field(default_factory=dict)
+
+    def clear(self) -> None:
+        self.key = None
+        self.cells = {}
+
+
+@dataclass
+class RuntimeMetrics:
+    wakeups: int = 0
+    audio_packets: int = 0
+    physics_steps: int = 0
+    draws: int = 0
+    changed_cells: int = 0
+    written_runs: int = 0
+    map_seconds: float = 0.0
+    affect_seconds: float = 0.0
+    physics_seconds: float = 0.0
+    raster_seconds: float = 0.0
+    material_seconds: float = 0.0
+    terminal_seconds: float = 0.0
+
+
+@dataclass
+class ReactionLatch:
+    transient: float = 0.0
+    pulse: float = 0.0
+    novelty: float = 0.0
+    hits: tuple[float, ...] = (0.0,) * 8
+    deviations: tuple[float, ...] = (0.0,) * 8
+    requested_at: float = 0.0
+
+    @property
+    def level(self) -> float:
+        return max(
+            self.transient,
+            self.pulse,
+            self.novelty,
+            max(self.hits, default=0.0),
+            max(self.deviations, default=0.0),
+        )
+
+    @property
+    def pending(self) -> bool:
+        return self.level >= 0.08
+
+    def observe(self, forces: AudioForces, affect: AffectiveState, now: float) -> None:
+        self.transient = max(self.transient, forces.transient)
+        self.pulse = max(self.pulse, forces.pulse)
+        self.novelty = max(self.novelty, affect.novelty)
+        self.hits = tuple(max(old, new) for old, new in zip(self.hits, forces.hits))
+        self.deviations = tuple(
+            max(old, new) for old, new in zip(self.deviations, forces.deviations)
+        )
+        if self.pending and self.requested_at <= 0.0:
+            self.requested_at = now
+
+    def consume(self, forces: AudioForces) -> AudioForces:
+        merged = replace(
+            forces,
+            transient=max(forces.transient, self.transient),
+            pulse=max(forces.pulse, self.pulse),
+            flux=max(forces.flux, self.novelty * 0.72),
+            hits=tuple(max(old, new) for old, new in zip(forces.hits, self.hits)),
+            deviations=tuple(
+                max(old, new) for old, new in zip(forces.deviations, self.deviations)
+            ),
+        )
+        self.transient = 0.0
+        self.pulse = 0.0
+        self.novelty *= 0.24
+        self.hits = (0.0,) * 8
+        self.deviations = (0.0,) * 8
+        self.requested_at = 0.0
+        return merged
+
+    def clear(self) -> None:
+        self.transient = 0.0
+        self.pulse = 0.0
+        self.novelty = 0.0
+        self.hits = (0.0,) * 8
+        self.deviations = (0.0,) * 8
+        self.requested_at = 0.0
+
+
 class LavaField:
     """Own one renderable organism and translate audio frames into its forces."""
 
@@ -258,11 +349,17 @@ class LavaField:
         self.h = 0
         self.motion_profile = motion_profile
         self.mapper = AudioForceMapper()
+        self.affect_tracker = AffectiveTracker()
         self.organism = AcousticOrganism()
         self.renderer = OrganismFieldRenderer()
         self.forces = AudioForces()
+        self.render_forces = AudioForces()
+        self.affect = AffectiveState()
+        self.reactions = ReactionLatch()
+        self.metrics = RuntimeMetrics()
         self.field_frame = FieldFrame.empty(0, 0)
         self._last_step_at: float | None = None
+        self._last_audio_key: tuple[float, str, float] | None = None
         self.phase = 0.0
         self.reactivity = 1.0
         self.frames_seen = 0
@@ -342,14 +439,37 @@ class LavaField:
     def clear(self) -> None:
         capacity = max(1, len(self.organism.bodies))
         self.mapper.reset()
+        self.affect_tracker.reset()
         self.organism.reset(capacity)
         self.organism.seed_for_tile(self.w, self.h, capacity)
         self.forces = AudioForces()
+        self.render_forces = AudioForces()
+        self.affect = AffectiveState()
+        self.reactions.clear()
         self._last_step_at = None
+        self._last_audio_key = None
         self.phase = 0.0
         self.reactivity = 1.0
         self.frames_seen = 0
         self.field_frame = FieldFrame.empty(self.w, self.h)
+
+    def observe(self, frame: AudioFrame, mode: str, reactivity: float) -> bool:
+        """Map each new capture frame even when the display is between draws."""
+
+        key = (float(frame.timestamp), mode, round(reactivity, 4))
+        if frame.timestamp > 0.0 and key == self._last_audio_key:
+            return False
+        started = time.perf_counter()
+        self.forces = self.mapper.map(frame, mode, reactivity)
+        self.metrics.map_seconds += time.perf_counter() - started
+        started = time.perf_counter()
+        self.affect = self.affect_tracker.update(self.forces, float(frame.timestamp))
+        self.metrics.affect_seconds += time.perf_counter() - started
+        self.reactions.observe(self.forces, self.affect, time.monotonic())
+        self._last_audio_key = key
+        self.reactivity = reactivity
+        self.frames_seen += 1
+        return True
 
     def step(
         self,
@@ -359,37 +479,54 @@ class LavaField:
         reactivity: float,
         lava_config: LavaConfig,
         cell_aspect: float = 1.85,
+        rasterize: bool = True,
+        advance_physics: bool = True,
     ) -> None:
         if self.w <= 0 or self.h <= 0:
             return
-        now = time.monotonic()
-        nominal_fps = 22.0 if profile == "atlas" else 12.0 if profile == "power-save" else 28.0
-        dt = 1.0 / nominal_fps if self._last_step_at is None else now - self._last_step_at
-        self._last_step_at = now
+        self.observe(frame, mode, reactivity)
+        self.render_forces = self.reactions.consume(self.forces)
+        if advance_physics:
+            now = time.monotonic()
+            nominal_fps = (
+                22.0 if profile == "atlas" else 12.0 if profile == "power-save" else 28.0
+            )
+            elapsed = (
+                1.0 / nominal_fps if self._last_step_at is None else now - self._last_step_at
+            )
+            elapsed = max(1.0 / 120.0, min(0.5, elapsed))
+            self._last_step_at = now
 
-        self.forces = self.mapper.map(frame, mode, reactivity)
-        self.organism.update(
-            dt,
-            self.forces,
-            self.w,
-            self.h,
-            lava_config,
-            self.motion_profile,
-            cell_aspect,
-        )
-        self.field_frame = self.renderer.render(
-            self.organism.bodies,
-            self.forces,
-            self.w,
-            self.h,
-            self.organism.phase,
-            self.motion_profile,
-            cell_aspect,
-        )
+            substeps = max(1, math.ceil(elapsed / (1.0 / 12.0)))
+            dt = elapsed / substeps
+            physics_started = time.perf_counter()
+            for _ in range(substeps):
+                self.organism.update(
+                    dt,
+                    self.render_forces,
+                    self.w,
+                    self.h,
+                    lava_config,
+                    self.motion_profile,
+                    cell_aspect,
+                    self.affect,
+                )
+            self.metrics.physics_steps += substeps
+            self.metrics.physics_seconds += time.perf_counter() - physics_started
+        if rasterize:
+            raster_started = time.perf_counter()
+            self.field_frame = self.renderer.render(
+                self.organism.bodies,
+                self.render_forces,
+                self.w,
+                self.h,
+                self.organism.phase,
+                self.motion_profile,
+                cell_aspect,
+            )
+            self.metrics.raster_seconds += time.perf_counter() - raster_started
 
         self.phase = self.organism.phase
-        self.reactivity = reactivity
-        self.frames_seen += 1
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -491,15 +628,128 @@ def _resolve_mode(requested: str, frame: AudioFrame) -> str:
     return "speech"
 
 
-def _effective_fps(config: AppConfig, frame: AudioFrame) -> float:
-    target = max(4, int(getattr(config, "fps", 24)))
-    if getattr(config, "profile", "atlas") == "power-save":
-        target = min(target, 18)
-    elif getattr(config, "profile", "atlas") == "atlas":
-        target = min(target, 30)
-    if frame.rms < 0.028 and frame.attack < 0.02:
-        target = min(target, 8)
-    return float(target)
+def _effective_fps(
+    config: AppConfig,
+    frame: AudioFrame,
+    forces: AudioForces | None = None,
+) -> float:
+    configured = max(1, int(getattr(config, "fps", 22)))
+    profile = getattr(config, "profile", "atlas")
+    profile_cap = 6 if profile == "power-save" else 14 if profile == "atlas" else 16
+    band_peak = max(frame.bands) if frame.bands else 0.0
+    mapped = forces or AudioForces()
+    mapped_peak = max(mapped.bass, mapped.voice, mapped.detail, mapped.energy)
+    if frame.attack >= 0.08 or mapped.transient >= 0.16 or mapped.pulse >= 0.18:
+        activity_target = 14
+    elif frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28:
+        activity_target = 8
+    elif (
+        frame.rms >= 0.030
+        or band_peak >= 0.070
+        or frame.attack >= 0.025
+        or mapped_peak >= 0.10
+    ):
+        activity_target = 4
+    else:
+        activity_target = 2
+    return float(min(configured, profile_cap, activity_target))
+
+
+def _should_draw_early(next_draw: float, now: float, target_fps: float) -> bool:
+    """Wake a quiet cadence when new audio needs a faster visual response."""
+
+    return next_draw - now > 1.0 / max(1.0, target_fps)
+
+
+@dataclass
+class FrameScheduler:
+    state: str = "resting"
+    burst_until: float = 0.0
+    engaged_until: float = 0.0
+    breathing_until: float = 0.0
+    immediate: bool = True
+    last_release: float = 0.0
+
+    def observe(
+        self,
+        frame: AudioFrame,
+        forces: AudioForces,
+        affect: AffectiveState,
+        reaction_level: float,
+        now: float,
+    ) -> None:
+        band_peak = max(frame.bands, default=0.0)
+        mapped_peak = max(forces.bass, forces.voice, forces.detail, forces.energy)
+        release_started = affect.release >= 0.16 and self.last_release < 0.16
+        self.last_release = affect.release
+        burst = (
+            reaction_level >= 0.14
+            or frame.attack >= 0.08
+            or affect.novelty >= 0.16
+            or release_started
+        )
+        engaged = frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28
+        breathing = frame.rms >= 0.025 or band_peak >= 0.065 or mapped_peak >= 0.09
+        if burst:
+            self.burst_until = max(self.burst_until, now + 0.22)
+            self.engaged_until = max(self.engaged_until, now + 0.72)
+            self.immediate = True
+        elif engaged:
+            self.engaged_until = max(self.engaged_until, now + 0.62)
+        elif breathing:
+            self.breathing_until = max(self.breathing_until, now + 0.80)
+        self.refresh(now)
+
+    def refresh(self, now: float) -> str:
+        if now < self.burst_until:
+            self.state = "burst"
+        elif now < self.engaged_until:
+            self.state = "engaged"
+        elif now < self.breathing_until:
+            self.state = "breathing"
+        else:
+            self.state = "resting"
+        return self.state
+
+    def target_fps(self, config: AppConfig, now: float) -> float:
+        state = self.refresh(now)
+        desired = {"resting": 2, "breathing": 4, "engaged": 8, "burst": 14}[state]
+        profile = getattr(config, "profile", "atlas")
+        cap = 6 if profile == "power-save" else 14 if profile == "atlas" else 16
+        return float(min(max(1, int(getattr(config, "fps", 22))), cap, desired))
+
+    def physics_fps(self, now: float) -> float:
+        state = self.refresh(now)
+        return float({"resting": 2, "breathing": 4, "engaged": 6, "burst": 8}[state])
+
+    def consume_immediate(self) -> bool:
+        immediate = self.immediate
+        self.immediate = False
+        return immediate
+
+
+def _wait_for_activity(
+    capture: AudioCapture | DemoAudioCapture,
+    timeout: float,
+) -> None:
+    descriptors: list[int] = []
+    try:
+        descriptors.append(sys.stdin.fileno())
+    except (AttributeError, OSError, ValueError):
+        pass
+    capture_descriptor = capture.fileno()
+    if capture_descriptor is not None:
+        descriptors.append(capture_descriptor)
+    if not descriptors:
+        time.sleep(max(0.0, timeout))
+        return
+    try:
+        readable, _, _ = select.select(descriptors, [], [], max(0.0, timeout))
+    except (OSError, ValueError):
+        time.sleep(min(0.05, max(0.0, timeout)))
+        return
+    if capture_descriptor is not None and capture_descriptor in readable:
+        capture.consume_signal()
 
 
 def _init_colors() -> None:
@@ -678,7 +928,8 @@ def _apply_product_preset(config: AppConfig, preset_name: str) -> None:
     setattr(config, "fps", int(preset["fps"]))
     setattr(config.audio, "analysis", str(preset["analysis"]))
     if preset["analysis"] == "bands":
-        setattr(config.audio, "sample_rate", max(config.audio.sample_rate, 22050))
+        minimum_rate = 22050 if preset["profile"] == "responsive" else 16000
+        setattr(config.audio, "sample_rate", max(config.audio.sample_rate, minimum_rate))
         setattr(config.audio, "frame_size", min(config.audio.frame_size, 1024))
     _set_reactivity(config, str(preset["reactivity"]))
     _set_density(config, str(preset["density"]))
@@ -892,12 +1143,69 @@ def _unicode_output_supported(encoding: str | None = None) -> bool:
     return "utf8" in resolved
 
 
+def _changed_cell_runs(
+    previous: tuple[tuple[str, int], ...] | None,
+    current: tuple[tuple[str, int], ...],
+) -> list[tuple[int, str, int]]:
+    """Group only changed adjacent cells that share a terminal attribute."""
+
+    runs: list[tuple[int, str, int]] = []
+    x = 0
+    while x < len(current):
+        if previous is not None and x < len(previous) and previous[x] == current[x]:
+            x += 1
+            continue
+        start = x
+        attr = current[x][1]
+        chars = []
+        while x < len(current) and current[x][1] == attr:
+            if previous is not None and x < len(previous) and previous[x] == current[x]:
+                break
+            chars.append(current[x][0])
+            x += 1
+        runs.append((start, "".join(chars), attr))
+    return runs
+
+
+def _changed_sparse_runs(
+    previous: dict[tuple[int, int], tuple[str, int]],
+    current: dict[tuple[int, int], tuple[str, int]],
+    blank_attr: int,
+) -> list[tuple[int, int, str, int]]:
+    """Return terminal runs for the sparse union of old and new contours."""
+
+    changed = sorted(
+        position
+        for position in previous.keys() | current.keys()
+        if previous.get(position) != current.get(position)
+    )
+    runs: list[tuple[int, int, str, int]] = []
+    index = 0
+    while index < len(changed):
+        y, x = changed[index]
+        char, attr = current.get((y, x), (" ", blank_attr))
+        start = x
+        text = [char]
+        index += 1
+        while index < len(changed):
+            next_y, next_x = changed[index]
+            next_char, next_attr = current.get((next_y, next_x), (" ", blank_attr))
+            if next_y != y or next_x != x + 1 or next_attr != attr:
+                break
+            text.append(next_char)
+            x = next_x
+            index += 1
+        runs.append((y, start, "".join(text), attr))
+    return runs
+
+
 def _draw_visual(
     win: curses.window,
     field: LavaField,
     config: AppConfig,
     frame: AudioFrame,
     ui: UiState,
+    cache: VisualCache | None = None,
 ) -> None:
     height, width = win.getmaxyx()
     palette = _palette_name(getattr(config.render, "palette", "amber"))
@@ -912,45 +1220,81 @@ def _draw_visual(
         edge=getattr(config.render, "edge", "soft"),
         afterglow=getattr(config.render, "afterglow", "present"),
     )
-    cell_w = _effective_cell_width(config, width, height)
-    grid_w = max(10, width // cell_w)
-    grid_h = max(6, height)
-    field.resize(grid_w, grid_h)
+    material_started = time.perf_counter()
+    current_cells: dict[tuple[int, int], tuple[str, int]] = {}
 
-    # Group adjacent cells with the same color attribute. Fewer addnstr calls
-    # matter more than the arithmetic when a terminal redraws thirty times/sec.
-    for y in range(min(height, field.h)):
-        screen_y = y
-        run_text = ""
-        run_attr = -1
-        run_start = 0
-        for screen_x in range(width):
-            cell = material.cell(
-                field.field_frame,
-                screen_x,
-                y,
-                width,
-                height,
-                style,
-                field.phase,
-            )
-            char = cell.glyph
-            shade = cell.shade
-            attention = cell.attention
-            bucket = _semantic_color_bucket(cell.shade, cell.attention, color_steps)
-            attr = _palette_attr(palette, bucket)
-            if char != " " and shade < 0.30:
-                attr |= curses.A_DIM
-            elif attention > 0.58:
-                attr |= curses.A_BOLD
-            if attr != run_attr and run_text:
-                _safe_add(win, screen_y, run_start, run_text, run_attr)
-                run_text = ""
-                run_start = screen_x
-            run_attr = attr
-            run_text += char
-        if run_text:
-            _safe_add(win, screen_y, run_start, run_text, run_attr)
+    def add_cell(y: int, x: int, cell) -> None:
+        if cell.glyph == " ":
+            return
+        bucket = _semantic_color_bucket(cell.shade, cell.attention, color_steps)
+        attr = _palette_attr(palette, bucket)
+        if cell.shade < 0.30:
+            attr |= curses.A_DIM
+        elif cell.attention > 0.58:
+            attr |= curses.A_BOLD
+        current_cells[(y, x)] = (cell.glyph, attr)
+
+    if material.name == "fluid":
+        span_rows = material.render_spans(
+            field.bodies,
+            field.render_forces,
+            width,
+            height,
+            style,
+            field.phase,
+            float(getattr(config.render, "cell_aspect", 1.85)),
+        )
+        for y, spans in span_rows.items():
+            for span in spans:
+                for offset, cell in enumerate(span.cells):
+                    add_cell(y, span.start + offset, cell)
+    else:
+        cell_rows = material.render(
+            field.field_frame,
+            width,
+            height,
+            style,
+            field.phase,
+        )
+        for y, cells in enumerate(cell_rows):
+            for x, cell in enumerate(cells):
+                add_cell(y, x, cell)
+    field.metrics.material_seconds += time.perf_counter() - material_started
+
+    cache_key = (
+        width,
+        height,
+        material.name,
+        palette,
+        color_steps,
+        style,
+        bool(getattr(config.render, "show_stats", False)),
+    )
+    previous_cells: dict[tuple[int, int], tuple[str, int]] = {}
+    if cache is not None:
+        if cache.key != cache_key:
+            win.erase()
+        else:
+            previous_cells = cache.cells
+
+    terminal_started = time.perf_counter()
+    changed_cells = 0
+    written_runs = 0
+    blank_attr = _palette_attr(palette, 0)
+    for y, start, text, attr in _changed_sparse_runs(
+        previous_cells, current_cells, blank_attr
+    ):
+        _safe_add(win, y, start, text, attr)
+        changed_cells += len(text)
+        written_runs += 1
+
+    if cache is not None:
+        cache.key = cache_key
+        cache.cells = current_cells
+    field.metrics.draws += 1
+    field.metrics.changed_cells += changed_cells
+    field.metrics.written_runs += written_runs
+    field.metrics.terminal_seconds += time.perf_counter() - terminal_started
 
     if getattr(config.render, "show_stats", True):
         stats = [
@@ -970,6 +1314,8 @@ def _draw_visual(
             if idx >= height:
                 break
             _safe_add(win, idx, 1, line, curses.A_DIM)
+        if cache is not None:
+            cache.clear()
 
 
 def _draw_dock(
@@ -1271,14 +1617,20 @@ def _run_curses(
     ui.set_status(ui.audio_status, ttl=2.5)
 
     next_draw = 0.0
+    next_physics = 0.0
+    last_audio_sequence = 0
+    previous_layout: Layout | None = None
+    visual_cache = VisualCache()
+    scheduler = FrameScheduler()
     try:
         while not ui.quit_requested:
-            # Input stays non-blocking so audio can continue to move the field
-            # when there are no keyboard or mouse events.
+            field.metrics.wakeups += 1
+            interacted = False
             while True:
                 key = stdscr.getch()
                 if key == -1:
                     break
+                interacted = True
                 if key == curses.KEY_MOUSE:
                     try:
                         event = curses.getmouse()
@@ -1296,26 +1648,54 @@ def _run_curses(
                 else:
                     _handle_key(key, config, ui, controls)
 
+            if interacted:
+                next_draw = 0.0
+                scheduler.immediate = True
+
             _save_pending_preferences(config, ui, saved_preferences)
 
             if ui.restart_audio:
                 capture.stop()
                 capture = _build_capture(config, demo)
+                last_audio_sequence = 0
                 ui.audio_status = capture.status()
                 ui.restart_audio = False
                 ui.set_status(ui.audio_status)
 
             if ui.reset_lava:
                 field.clear()
+                next_physics = 0.0
                 ui.reset_lava = False
 
-            last_frame = capture.latest()
-
-            ui.resolved_mode = _resolve_mode(getattr(config, "content_mode", "auto"), last_frame)
-            ui.media = media.latest()
+            reactivity = float(getattr(config.lava, "reactivity", 1.0))
             now = time.monotonic()
+            pending_audio = capture.drain_after(last_audio_sequence)
+            for captured in pending_audio:
+                last_audio_sequence = captured.sequence
+                last_frame = captured.frame
+                ui.resolved_mode = _resolve_mode(
+                    getattr(config, "content_mode", "auto"), last_frame
+                )
+                field.observe(last_frame, ui.resolved_mode, reactivity)
+                field.metrics.audio_packets += 1
+                scheduler.observe(
+                    last_frame,
+                    field.forces,
+                    field.affect,
+                    field.reactions.level,
+                    now,
+                )
+            if not pending_audio:
+                scheduler.refresh(now)
+            ui.media = media.latest()
+            target_fps = scheduler.target_fps(config, now)
+            if scheduler.immediate or _should_draw_early(next_draw, now, target_fps):
+                next_draw = now
             if now < next_draw:
-                time.sleep(min(0.01, next_draw - now))
+                timeout = min(0.25, next_draw - now)
+                if isinstance(capture, DemoAudioCapture):
+                    timeout = min(timeout, 1.0 / 30.0)
+                _wait_for_activity(capture, timeout)
                 continue
 
             rows, cols = stdscr.getmaxyx()
@@ -1328,19 +1708,31 @@ def _run_curses(
                 continue
 
             layout = _compute_layout(rows, cols, ui.dock_open, config)
-            cell_w = _effective_cell_width(config, layout.vis_w, layout.vis_h)
-            field.resize(
-                max(10, layout.vis_w // cell_w),
-                max(6, layout.vis_h),
+            contour_output = (
+                getattr(config.render, "material", "text") == "fluid"
+                and _unicode_output_supported()
             )
+            if contour_output:
+                field.resize(max(10, layout.vis_w), max(6, layout.vis_h))
+            else:
+                cell_w = _effective_cell_width(config, layout.vis_w, layout.vis_h)
+                field.resize(
+                    max(10, layout.vis_w // cell_w),
+                    max(6, layout.vis_h),
+                )
+            advance_physics = now >= next_physics or scheduler.immediate
             field.step(
                 last_frame,
                 ui.resolved_mode,
                 getattr(config, "profile", "atlas"),
-                float(getattr(config.lava, "reactivity", 1.0)),
+                reactivity,
                 config.lava,
                 float(getattr(config.render, "cell_aspect", 1.85)),
+                rasterize=not contour_output,
+                advance_physics=advance_physics,
             )
+            if advance_physics:
+                next_physics = now + 1.0 / scheduler.physics_fps(now)
 
             try:
                 vis = stdscr.derwin(layout.vis_h, layout.vis_w, layout.vis_y, layout.vis_x)
@@ -1353,16 +1745,20 @@ def _run_curses(
                 next_draw = now + 0.05
                 continue
 
-            stdscr.erase()
-            vis.erase()
-            _draw_visual(vis, field, config, last_frame, ui)
+            if layout != previous_layout:
+                stdscr.erase()
+                visual_cache.clear()
+                previous_layout = layout
+            _draw_visual(vis, field, config, last_frame, ui, visual_cache)
             vis.noutrefresh()
             if dock is not None:
                 _draw_dock(dock, config, ui, controls, layout)
             _draw_status(stdscr, config, ui, last_frame, field)
+            stdscr.noutrefresh()
             curses.doupdate()
 
-            next_draw = now + (1.0 / _effective_fps(config, last_frame))
+            scheduler.consume_immediate()
+            next_draw = time.monotonic() + (1.0 / target_fps)
     finally:
         _save_pending_preferences(config, ui, saved_preferences, force=True)
         _set_focus_reporting(False)

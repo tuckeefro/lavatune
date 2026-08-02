@@ -4,6 +4,26 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 
 ## Unreleased
 
+### Added
+
+- Added an end-to-end benchmark for the alpha Fluid, analytic contour Fluid, and prepared Text render paths.
+- Added an affective posture layer for weight, agitation, cohesion, tension, openness, release, intimacy, volatility, and novelty without named-emotion classification.
+- Added a reaction latch so short attacks survive between lower-cadence visual frames.
+- Added fast-decaying directional contour spikes gated by per-band deviation from a noise-aware 2.4-second rolling average.
+- Added phase-offset tempo breathing, stretch, and circulation pressure to every persistent body.
+- Added an authored Midwest emo posture arc from fragile detail and yearning contraction into stored-tension catharsis.
+
+### Changed
+
+- Replaced Fluid's full scalar-field raster and per-cell gradient sampling with analytic body contours and localized edge attention.
+- Added hysteretic 2/4/8/14 FPS display pacing and a separate 2/4/6/8 FPS physics clock while preserving elapsed time through bounded simulation substeps.
+- Decoupled capture-frame mapping from display cadence with a bounded sequenced queue and event notifier.
+- Changed normal listening to real spectral bands and retained coarse single-pass analysis for low-power mode.
+- Added bounded bass breathing, voice shear, tonal edge ripples, and impact bulges to Fluid contours.
+- Changed Fluid rendering to emit sparse occupied row spans, cache repeated contours, and write only terminal runs that changed.
+- Made audio-force smoothing elapsed-time based so response is stable across capture profiles and delayed frames.
+- Prepared Text material rows once before viewport interpolation instead of repeatedly sampling all semantic fields per cell.
+
 ## 0.1.0a1 - 2026-08-01
 
 ### Added

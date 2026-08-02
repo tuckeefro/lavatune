@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import unittest
+from unittest.mock import patch
 
 from lavatune.app import (
     LavaField,
@@ -17,10 +18,12 @@ from lavatune.app import (
 )
 from lavatune.audio import AudioFrame
 from lavatune.config import LavaConfig, apply_cli_overrides, load_config
-from lavatune.materials import MATERIAL_NAMES, MaterialStyle, material_for
+from lavatune.materials import FLUID_MATERIAL, MATERIAL_NAMES, MaterialStyle, material_for
 from lavatune.organism import (
     CELL_ASPECT,
     AcousticOrganism,
+    AffectiveState,
+    AffectiveTracker,
     AudioForceMapper,
     AudioForces,
     circulation_at,
@@ -46,6 +49,150 @@ def settle(field: LavaField, frame: AudioFrame, mode: str, frames: int = 90) -> 
 
 
 class AudioForceTests(unittest.TestCase):
+    def test_time_based_mapping_is_consistent_across_capture_cadences(self) -> None:
+        def map_for(step: float) -> AudioForces:
+            mapper = AudioForceMapper()
+            output = AudioForces()
+            timestamp = step
+            while timestamp <= 2.0 + 0.0001:
+                output = mapper.map(
+                    AudioFrame(
+                        0.42,
+                        [0.72, 0.62, 0.32, 0.15, 0.08, 0.04, 0.02, 0.01],
+                        0.0,
+                        0.04,
+                        timestamp,
+                    ),
+                    "music",
+                    1.0,
+                )
+                timestamp += step
+            return output
+
+        fast = map_for(0.05)
+        slow = map_for(0.10)
+
+        self.assertAlmostEqual(fast.bass, slow.bass, delta=0.08)
+        self.assertAlmostEqual(fast.voice, slow.voice, delta=0.08)
+        self.assertAlmostEqual(fast.detail, slow.detail, delta=0.08)
+
+    def test_affective_state_builds_tension_then_recognizes_release(self) -> None:
+        tracker = AffectiveTracker()
+        tense = AudioForces(
+            bass=0.55,
+            voice=0.62,
+            detail=0.70,
+            transient=0.28,
+            energy=0.82,
+            tempo=0.58,
+            pulse=0.42,
+            flux=0.34,
+            bands=(0.55, 0.62, 0.48, 0.72, 0.64, 0.58, 0.76, 0.68),
+            hits=(0.12,) * 8,
+        )
+        for index in range(70):
+            built = tracker.update(tense, 1.0 + index * 0.10)
+
+        released = tracker.update(AudioForces(), 8.1)
+
+        self.assertGreater(built.tension, 0.45)
+        self.assertGreater(built.agitation, 0.28)
+        self.assertGreater(released.release, 0.45)
+        self.assertGreater(released.tension, 0.20)
+
+    def test_midwest_emo_arc_moves_from_fragile_yearning_to_catharsis(self) -> None:
+        tracker = AffectiveTracker()
+        verse = AudioForces(
+            voice=0.58,
+            detail=0.72,
+            energy=0.40,
+            tone=0.68,
+            bands=(0.12, 0.16, 0.28, 0.48, 0.44, 0.62, 0.78, 0.66),
+        )
+        for index in range(60):
+            held = tracker.update(verse, 1.0 + index * 0.10)
+
+        breaking_open = tracker.update(
+            AudioForces(
+                bass=0.72,
+                voice=0.66,
+                detail=0.78,
+                transient=0.92,
+                energy=0.94,
+                pulse=0.82,
+                flux=0.70,
+                tone=0.62,
+                bands=(0.78, 0.74, 0.68, 0.72, 0.70, 0.82, 0.90, 0.84),
+            ),
+            7.1,
+        )
+
+        self.assertGreater(held.fragility, 0.38)
+        self.assertGreater(held.yearning, 0.34)
+        self.assertGreater(breaking_open.catharsis, 0.35)
+
+    def test_reaction_latch_keeps_an_attack_until_a_draw_consumes_it(self) -> None:
+        field = LavaField()
+        field.resize(44, 18)
+        field.observe(
+            AudioFrame(0.12, [0.12] * 8, 0.02, 0.08, 1.0),
+            "music",
+            1.0,
+        )
+        field.observe(
+            AudioFrame(0.65, [0.75] * 8, 0.80, 0.18, 1.06),
+            "music",
+            1.0,
+        )
+        peak = field.reactions.transient
+        field.observe(
+            AudioFrame(0.08, [0.08] * 8, 0.0, 0.04, 1.12),
+            "music",
+            1.0,
+        )
+
+        field.step(
+            AudioFrame(0.08, [0.08] * 8, 0.0, 0.04, 1.12),
+            "music",
+            "atlas",
+            1.0,
+            LavaConfig(),
+            rasterize=False,
+        )
+
+        self.assertGreater(peak, 0.20)
+        self.assertGreaterEqual(field.render_forces.transient, peak)
+        self.assertFalse(field.reactions.pending)
+
+    def test_reaction_latch_keeps_a_deviation_until_physics_consumes_it(self) -> None:
+        field = LavaField()
+        deviation = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.86, 0.0)
+
+        field.reactions.observe(
+            AudioForces(deviations=deviation),
+            AffectiveState(),
+            1.0,
+        )
+        retained = field.reactions.consume(AudioForces())
+
+        self.assertEqual(retained.deviations, deviation)
+        self.assertFalse(field.reactions.pending)
+
+    def test_capture_frames_are_mapped_between_lower_cadence_draws(self) -> None:
+        field = LavaField()
+        field.resize(44, 18)
+        first = AudioFrame(0.12, [0.12] * 8, 0.02, 0.08, 1.0)
+        second = AudioFrame(0.42, [0.52] * 8, 0.32, 0.18, 1.06)
+
+        with patch.object(field.mapper, "map", wraps=field.mapper.map) as mapper:
+            field.observe(first, "music", 1.0)
+            field.observe(second, "music", 1.0)
+            field.step(second, "music", "atlas", 1.0, LavaConfig(), rasterize=False)
+
+        self.assertEqual(mapper.call_count, 2)
+        self.assertEqual(field.frames_seen, 2)
+        self.assertGreater(field.forces.transient, 0.10)
+
     def test_frequency_ranges_map_to_distinct_physical_controls(self) -> None:
         bass_mapper = AudioForceMapper()
         speech_mapper = AudioForceMapper()
@@ -68,6 +215,29 @@ class AudioForceTests(unittest.TestCase):
 
         self.assertGreater(peak.transient, after.transient)
         self.assertLess(after.transient, 0.05)
+
+    def test_spikes_require_a_band_to_deviate_from_its_recent_average(self) -> None:
+        mapper = AudioForceMapper()
+        baseline = [0.30] * 8
+        steady = AudioForces()
+        for index in range(40):
+            steady = mapper.map(
+                AudioFrame(0.35, baseline, 0.70, 0.08, 1.0 + index * 0.10),
+                "music",
+                1.0,
+            )
+
+        changed = baseline[:]
+        changed[6] = 0.92
+        surprise = mapper.map(
+            AudioFrame(0.35, changed, 0.0, 0.16, 5.0),
+            "music",
+            1.0,
+        )
+
+        self.assertLess(max(steady.deviations), 0.03)
+        self.assertGreater(surprise.deviations[6], 0.60)
+        self.assertLess(max(surprise.deviations[:6]), 0.03)
 
     def test_spectral_centroid_distinguishes_low_and_high_tone(self) -> None:
         low_mapper = AudioForceMapper()
@@ -99,6 +269,78 @@ class AudioForceTests(unittest.TestCase):
 
 
 class CompositionTests(unittest.TestCase):
+    def test_embodied_mirror_contracts_under_tension_and_opens_on_release(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def settled_spread(affect: AffectiveState) -> float:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            for _ in range(120):
+                organism.update(
+                    1.0 / 22.0,
+                    AudioForces(),
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    affect,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            return sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+
+        contracted = settled_spread(
+            AffectiveState(cohesion=0.90, intimacy=0.82, tension=0.78)
+        )
+        released = settled_spread(AffectiveState(openness=0.82, release=0.84))
+
+        self.assertLess(contracted, 0.23)
+        self.assertGreater(released, contracted * 1.55)
+
+    def test_midwest_emo_posture_reaches_then_breaks_open(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def run(affect: AffectiveState) -> tuple[AcousticOrganism, float]:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            forces = AudioForces(detail=0.45, energy=0.40)
+            for _ in range(80):
+                organism.update(
+                    1.0 / 22.0,
+                    forces,
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    affect,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            spread = sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+            return organism, spread
+
+        yearning, held_spread = run(
+            AffectiveState(
+                cohesion=0.80,
+                tension=0.65,
+                fragility=0.80,
+                yearning=0.90,
+            )
+        )
+        _, cathartic_spread = run(
+            AffectiveState(catharsis=0.90, release=0.50, openness=0.40)
+        )
+        listener = yearning.bodies[1]
+
+        self.assertGreater(listener.stretch_y, listener.stretch_x + 0.10)
+        self.assertGreater(cathartic_spread, held_spread * 1.60)
+
     def test_sound_roles_disturb_their_authored_bodies_differently(self) -> None:
         config = LavaConfig(blobs=4)
         cases = {
@@ -139,6 +381,31 @@ class CompositionTests(unittest.TestCase):
         self.assertGreater(results["bass"][0][0], results["silence"][0][0] * 2.0)
         self.assertGreater(results["voice"][0][1], results["silence"][0][1] * 1.20)
         self.assertEqual(results["detail"][1].index(max(results["detail"][1])), 2)
+
+    def test_tempo_changes_each_body_and_the_casts_overall_motion(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def run(tempo: float) -> AcousticOrganism:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            forces = AudioForces(tempo=tempo, energy=0.62)
+            for _ in range(60):
+                organism.update(1.0 / 22.0, forces, 44, 18, config, "buoyant")
+            return organism
+
+        slow = run(0.05)
+        fast = run(0.92)
+        slow_motion = sum(math.hypot(body.vx, body.vy) for body in slow.bodies[:4])
+        fast_motion = sum(math.hypot(body.vx, body.vy) for body in fast.bodies[:4])
+        shape_changes = [
+            abs(fast_body.stretch_x - slow_body.stretch_x)
+            + abs(fast_body.stretch_y - slow_body.stretch_y)
+            for slow_body, fast_body in zip(slow.bodies[:4], fast.bodies[:4])
+        ]
+
+        self.assertGreater(fast_motion, slow_motion * 1.08)
+        self.assertTrue(all(change > 0.008 for change in shape_changes))
+        self.assertGreater(max(shape_changes) - min(shape_changes), 0.01)
 
     def test_tile_composition_changes_topology_instead_of_only_scale(self) -> None:
         self.assertEqual(compose_tile(24, 10, 8).active_bodies, 1)
@@ -257,10 +524,30 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual([body.character.name for body in lit], ["glint"])
         self.assertEqual([body.afterglow for body in organism.bodies[:2]], [0.0, 0.0])
         self.assertEqual(organism.bodies[3].afterglow, 0.0)
+        self.assertEqual([body.spike for body in organism.bodies[:4]], [0.0] * 4)
 
         for _ in range(36):
             organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
         self.assertLess(organism.bodies[2].afterglow, 0.05)
+
+    def test_fast_change_spikes_then_softens_before_afterglow_fades(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        strike = AudioForces(
+            transient=1.0,
+            tone=0.86,
+            deviations=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        )
+
+        organism.update(1.0 / 22.0, strike, 44, 18, config, "buoyant")
+        body = organism.bodies[2]
+        self.assertGreater(body.spike, 0.90)
+
+        for _ in range(12):
+            organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
+
+        self.assertLess(body.spike, 0.02)
+        self.assertGreater(body.afterglow, body.spike)
 
     def test_transient_pressure_crosses_the_tile_and_recovers(self) -> None:
         organism = AcousticOrganism(body_limit=4)
@@ -305,6 +592,109 @@ class CompositionTests(unittest.TestCase):
 
 
 class RenderingBudgetTests(unittest.TestCase):
+    def test_contour_fluid_step_skips_semantic_field_rasterization(self) -> None:
+        field = LavaField()
+        field.resize(44, 18)
+
+        with patch.object(field.renderer, "render") as render:
+            field.step(
+                MUSIC,
+                "music",
+                "atlas",
+                1.0,
+                LavaConfig(blobs=4),
+                rasterize=False,
+            )
+
+        render.assert_not_called()
+
+    def test_low_display_cadence_preserves_elapsed_physics_time(self) -> None:
+        field = LavaField()
+        field.resize(44, 18)
+        field._last_step_at = 9.7
+        phase_before = field.phase
+
+        with patch("lavatune.app.time.monotonic", return_value=10.0):
+            field.step(
+                SILENCE,
+                "book",
+                "atlas",
+                1.0,
+                LavaConfig(blobs=4),
+                rasterize=False,
+            )
+
+        self.assertGreater(field.phase - phase_before, 0.15)
+        self.assertLess(field.phase - phase_before, 0.25)
+
+    def test_audio_observation_does_not_require_a_physics_step(self) -> None:
+        field = LavaField()
+        field.resize(44, 18)
+        phase_before = field.phase
+
+        field.step(
+            TRANSIENT,
+            "music",
+            "atlas",
+            1.0,
+            LavaConfig(blobs=4),
+            rasterize=False,
+            advance_physics=False,
+        )
+
+        self.assertEqual(field.phase, phase_before)
+        self.assertGreater(field.render_forces.transient, 0.0)
+
+    def test_contour_fluid_stays_centered_and_bounded_across_review_matrix(self) -> None:
+        habitats = ((18, 8), (20, 32), (44, 18), (90, 12))
+        fixtures = (
+            (SILENCE, "book"),
+            (SPEECH, "speech"),
+            (BASS, "music"),
+            (MUSIC, "music"),
+            (TRANSIENT, "music"),
+        )
+        config = LavaConfig(blobs=6)
+
+        for width, height in habitats:
+            for frame, mode in fixtures:
+                with self.subTest(width=width, height=height, mode=mode, rms=frame.rms):
+                    field = LavaField()
+                    field.resize(width, height)
+                    for _ in range(42):
+                        field._last_step_at = None
+                        field.step(
+                            frame,
+                            mode,
+                            "atlas",
+                            1.0,
+                            config,
+                            rasterize=False,
+                        )
+                    rows = FLUID_MATERIAL.render(
+                        field.bodies,
+                        field.forces,
+                        width,
+                        height,
+                        MaterialStyle(),
+                        field.phase,
+                        CELL_ASPECT,
+                    )
+                    occupied = [
+                        (x, y)
+                        for y, row in enumerate(rows)
+                        for x, cell in enumerate(row)
+                        if cell.glyph != " "
+                    ]
+                    visible = len(occupied) / (width * height)
+                    center_x = sum(x for x, _ in occupied) / len(occupied) / max(1, width - 1)
+                    center_y = sum(y for _, y in occupied) / len(occupied) / max(1, height - 1)
+
+                    self.assertGreater(visible, 0.04)
+                    self.assertLess(visible, 0.55)
+                    self.assertLess(abs(center_x - 0.5), 0.27)
+                    self.assertLess(abs(center_y - 0.52), 0.30)
+
     def test_semantic_field_keeps_mass_surface_and_attention_separate(self) -> None:
         field = LavaField()
         field.resize(44, 18)
@@ -406,6 +796,8 @@ class SelectedDirectionTests(unittest.TestCase):
 
         self.assertEqual(_product_preset_name_for_config(config), "listen")
         self.assertEqual(_scene_name_for_config(config), "soft-afterglow")
+        self.assertEqual(config.audio.analysis, "bands")
+        self.assertEqual(config.audio.frame_size, 1024)
 
     def test_operating_modes_do_not_replace_the_canonical_appearance(self) -> None:
         for preset in PRODUCT_PRESETS:
