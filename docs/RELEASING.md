@@ -31,13 +31,13 @@ python -m venv /tmp/lavatune-release-check
 
 ## Tag and GitHub release
 
-For package version `0.1.0a1`, use tag `v0.1.0a1`:
+For package version `0.0.2a`, use tag `v0.0.2a`:
 
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.1.0a1 -m "Lavatune 0.1.0a1"
-git push origin v0.1.0a1
+git tag -a v0.0.2a -m "Lavatune 0.0.2a"
+git push origin v0.0.2a
 ```
 
 `.github/workflows/release.yml` then:

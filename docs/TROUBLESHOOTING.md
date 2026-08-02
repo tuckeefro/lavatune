@@ -36,6 +36,16 @@ lavatune --backend pipewire --source @DEFAULT_AUDIO_SINK@.monitor
 
 A container, sandbox, remote shell, or service session may have the backend executable without permission to connect to the desktop audio server. The doctor reports that separately from a missing executable.
 
+## No live PCM in doctor probe
+
+`lavatune --doctor` uses a short live PCM probe only on Linux in this alpha window. If the check reports no frames:
+
+- verify audio is currently playing,
+- confirm the sink/source monitor exists and matches the `--source` value, and
+- use `lavatune --demo` to validate startup, rendering, and controls.
+
+If your platform is not Linux, the probe is skipped by design and shown as `skip` until the macOS track lands.
+
 ## Limited or incorrect colors
 
 Run `lavatune --doctor --no-audio-probe` inside the target terminal. The intended palette needs 256-color support. Check that `TERM` describes the actual terminal or multiplexer instead of forcing a value globally.

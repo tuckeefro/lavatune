@@ -184,12 +184,21 @@ def inspect_environment(
         )
     )
 
-    if probe_audio and selected_backend is not None:
+    if probe_audio and selected_backend is not None and linux:
         checks.append(
             _probe_audio(
                 config,
                 timeout=max(0.2, min(5.0, probe_timeout)),
                 capture_factory=capture_factory,
+            )
+        )
+    elif probe_audio:
+        checks.append(
+            DoctorCheck(
+                "audio frames",
+                "skip",
+                "audio probe is Linux-only in this release",
+                "Use --demo or wait for the 0.2.0 macOS native track.",
             )
         )
     elif not probe_audio:
