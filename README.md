@@ -21,6 +21,8 @@ The current implementation targets Linux. A lightweight native macOS sibling is 
 - distinguishes bass, voice, detail, cadence, and transients
 - recomposes the same body identities into micro, chimney, basin, and current habitats
 - offers Text and foreground-only Fluid output materials without changing organism physics
+- carries weight, agitation, tension, intimacy, and release as an embodied acoustic posture
+- adapts its 2-14 FPS cadence to acoustic activity and redraws only occupied contour changes
 - displays optional local MPRIS media metadata
 - includes canonical listening, music, speech, and low-power operating modes
 - supports keyboard and mouse controls through Python `curses`
@@ -95,7 +97,7 @@ The three dock tabs are:
 
 Reactivity personalities are `whisper`, `conversational`, and `electric`. The default uses buoyant motion, `soft-afterglow`, and conversational reactivity.
 
-`Text` uses a validated one-column glyph ramp. `Fluid` follows the local mass-field gradient inside each foreground-only terminal cell, using quarter cells to describe a continuous curved edge and solid blocks for the connected body core. It preserves the terminal's real background and falls back to Text when UTF-8 output is unavailable. Look controls affect presentation only; switching them does not reset bodies, audio calibration, momentum, or pressure memory.
+`Text` uses a validated one-column glyph ramp. `Fluid` draws analytic body contours directly from the organism, using quarter cells for curved boundaries and solid blocks for connected cores. It skips the full scalar-field raster used by Text, preserves the terminal's real background, and falls back to Text when UTF-8 output is unavailable. Look controls affect presentation only; switching them does not reset bodies, audio calibration, momentum, or pressure memory.
 
 ## Audio behavior
 
@@ -104,7 +106,7 @@ Lavatune analyzes a monitor stream from the Linux audio stack. It does not save 
 - PipeWire: `@DEFAULT_AUDIO_SINK@.monitor`
 - PulseAudio and FFmpeg: `@DEFAULT_MONITOR@`
 
-The first four bodies have stable roles: a large bass-sensitive ballast, a voice-oriented listener, a small detail-sensitive glint, and a neutral drifter. Lows move mass and create wall pressure, midrange circulates bodies, highs texture their edges, cadence changes convection, and a transient selects one body for a localized impact and decaying afterglow. These relationships are intentionally elastic rather than frame-perfect synchronization.
+The first four bodies have stable roles: a large bass-sensitive ballast, a voice-oriented listener, a small detail-sensitive glint, and a neutral drifter. Lows move mass and create wall pressure, midrange circulates bodies, and highs texture their edges. Tempo changes the whole vessel while each body breathes, stretches, and turns on its own phase. A transient can create physical impact and decaying afterglow, but a body forms a directional spike only when its listening band rises meaningfully above a recent rolling average. Phrase-scale tension draws the cast together; openness and release let it expand again. These relationships are intentionally elastic rather than frame-perfect synchronization, and Lavatune never assigns a named emotion to what it hears.
 
 The subjective behavior and review criteria are recorded in [`docs/DESIGN.md`](docs/DESIGN.md).
 
@@ -154,6 +156,7 @@ python -m build
 twine check dist/*
 python scripts/verify_dist.py dist
 python scripts/benchmark.py
+python scripts/benchmark_render.py
 ```
 
 The tests use synthetic signals and a pseudo-terminal; they do not need a live audio server or network access. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) follows one frame through the program, and [`CONTRIBUTING.md`](CONTRIBUTING.md) covers contribution boundaries.

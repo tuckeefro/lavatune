@@ -36,11 +36,31 @@ The active cast has a mass-weighted visual center. A first viewport composes tha
 - Bass moves mass outward and downward, then leaves wall pressure to resolve.
 - Voice changes circulation most strongly around the listener.
 - High detail deforms and textures smaller bodies more than it translates the group.
-- Cadence changes the rate of convection.
-- A transient selects one pitch-adjacent body, strikes one edge, and recovers more slowly than it arrived.
+- Tempo changes the rate of convection and gives every body phase-offset breathing, stretch, and orbital pressure.
+- A transient selects one pitch-adjacent body for physical impact and softer afterglow.
+- Its contour points only when the listening band also exceeds its learned baseline.
+- A band spikes only when it rises meaningfully above its noise-aware rolling average over roughly 2.4 seconds. Steady loudness and repeated ordinary attacks remain soft.
 - Strong rising events also send a bounded pressure wave across the shared tile. Nearby bodies feel it first; it changes motion and compression without spending the attention color.
 
 The mapping is intentionally elastic. Believable cause and effect matters more than frame-perfect beat synchronization.
+
+## Embodied Mirror
+
+The organism responds on three overlapping clocks. Gesture-scale cues such as attacks and band rises land immediately and leave a brief physical memory. Phrase-scale cues accumulate agitation, tension, volatility, and novelty over a few seconds. Atmosphere-scale cues slowly establish weight, cohesion, openness, and intimacy. A sudden fall after sustained pressure becomes release.
+
+These values describe posture rather than claiming to recognize sadness, joy, anger, or any other named emotion. Tension and intimacy contract the group, weight lowers its center, agitation roughens circulation and edges, and openness or release expands the cast. Brightness remains on a separate attention budget, so an emotionally intense passage can change stance and motion without washing out the tile.
+
+The intended arc is legible but restrained: pressure gathers, bodies draw closer and hold more memory, a change in the source registers promptly, and release opens the composition. The posture should remain believable across speech and noisy guitars without pretending that either has one deterministic meaning.
+
+## Midwest Emo Grammar
+
+The default behavior is authored around a Midwest emo arc without attempting genre recognition. Quiet high detail and conversational voice accumulate fragility and yearning: smaller listening bodies become more intricate, the cast draws inward, and vertical shapes reach without resolving. Tension remains in the longer posture instead of flashing on every note.
+
+When a strong rise arrives after that held posture, catharsis converts the stored tension into outward pressure, larger breathing, and faster circulation. The response is intentionally disproportionate to the event because the preceding restraint is part of its meaning. Bodies keep different phases, so intricate or irregular tempo feels collective but never lockstep. After the break, pressure and spikes recover quickly while afterglow and yearning take longer to leave.
+
+These are transparent acoustic relationships, not a model deciding whether the source is Midwest emo. Other speech and music can produce the same posture when they share the same dynamics.
+
+Listening mode keeps real spectral bands even under the restrained display cadence. Analysis cost is small compared with terminal rendering, and broad envelope history is not an acceptable substitute for tonal response when the measured power difference is negligible. Low-power mode may use coarse three-region analysis.
 
 ## Attention Budget
 
@@ -49,6 +69,8 @@ Body color is muted and matte. The final palette color belongs only to local aft
 Normal operation shows the organism and optional local media title. Controls and diagnostics are temporary editing surfaces, not part of the daily composition.
 
 Text and Fluid are output materials applied after physics. Weight changes field occupancy, Edge changes surface definition, and Afterglow changes only the bounded attention contribution. A material change must never reset or reinterpret the organism.
+
+Calmness includes resource use. Silence should not keep a CPU core or laptop fan busy merely to prove the organism is alive. The display cadence therefore ranges from 2 FPS at rest through 4 and 8 FPS in ordinary listening, with 14 FPS reserved for short transients. Physics uses its own lower 2/4/6/8 FPS schedule and bounded elapsed-time substeps, so conserving terminal work must not change the organism's personality or sense of time.
 
 ## Review Protocol
 
@@ -63,6 +85,7 @@ A pass succeeds when:
 - a transient stays local and visibly recovers
 - ordinary body intensity never receives the attention color
 - the closed control dock consumes no tile area
+- silence settles to the lowest cadence and ordinary music does not require transient cadence
 
 ## Non-goals
 

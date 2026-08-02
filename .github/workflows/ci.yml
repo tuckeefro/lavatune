@@ -65,4 +65,6 @@ jobs:
           "$RUNNER_TEMP/lavatune-wheel/bin/pip" install dist/*.whl
           "$RUNNER_TEMP/lavatune-wheel/bin/lavatune" --help
       - name: Smoke-test performance harness
-        run: python scripts/benchmark.py --frames 4 --json
+        run: |
+          python scripts/benchmark.py --frames 4 --json
+          python scripts/benchmark_render.py --frames 4 --json
