@@ -436,6 +436,8 @@ class FluidMaterial:
                 forces.tempo,
                 forces.pulse,
                 forces.flux,
+                forces.rhythm_density,
+                forces.rhythm_impulse,
                 *forces.bands,
                 *forces.hits,
                 *forces.deviations,
@@ -496,10 +498,19 @@ class FluidMaterial:
                     radius_y=radius_y,
                     active_extent=active_extent,
                     detail_frequency=3.2 + forces.tone * 2.4,
-                    detail_phase=phase * (1.15 + forces.tempo * 2.6) + body.phase,
+                    detail_phase=(
+                        phase
+                        * (1.15 + forces.tempo * 2.6 + forces.rhythm_density * 4.0)
+                        + body.phase
+                    ),
                     detail_amplitude=detail_amplitude,
                     pulse_phase=-phase * (1.4 + forces.tempo * 3.2) + body.phase * 1.3,
-                    pulse_amplitude=forces.pulse * (0.045 + pitch_affinity * 0.035),
+                    pulse_amplitude=(
+                        forces.pulse * (0.045 + pitch_affinity * 0.035)
+                        + forces.rhythm_density
+                        * body.character.detail
+                        * (0.018 + pitch_affinity * 0.018)
+                    ),
                     shear_gain=(
                         radius_x
                         * forces.voice

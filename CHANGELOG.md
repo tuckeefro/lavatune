@@ -12,9 +12,13 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 - Added fast-decaying directional contour spikes gated by per-band deviation from a noise-aware 2.4-second rolling average.
 - Added phase-offset tempo breathing, stretch, and circulation pressure to every persistent body.
 - Added an authored Midwest emo posture arc from fragile detail and yearning contraction into stored-tension catharsis.
+- Added genre-neutral rapid-pattern density so closely spaced attacks remain visibly patterned without replacing beat-scale tempo.
+- Added saturating restraint and confirmed snap behavior so quiet-to-loud breaks receive consistent cathartic action without duration-based escalation.
+- Added a deterministic narrative context layer for expectation, interruption, and earned resolution without named-emotion or intent classification.
 
 ### Changed
 
+- Changed wide-current centering to an adaptive dead-zone leash that prevents sustained corner crowding without filling or pinning the composition.
 - Replaced Fluid's full scalar-field raster and per-cell gradient sampling with analytic body contours and localized edge attention.
 - Added hysteretic 2/4/8/14 FPS display pacing and a separate 2/4/6/8 FPS physics clock while preserving elapsed time through bounded simulation substeps.
 - Decoupled capture-frame mapping from display cadence with a bounded sequenced queue and event notifier.
@@ -23,6 +27,7 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 - Changed Fluid rendering to emit sparse occupied row spans, cache repeated contours, and write only terminal runs that changed.
 - Made audio-force smoothing elapsed-time based so response is stable across capture profiles and delayed frames.
 - Prepared Text material rows once before viewport interpolation instead of repeatedly sampling all semantic fields per cell.
+- Changed the reaction latch to accumulate bounded rapid impulses between lower-cadence physics steps instead of retaining only one peak.
 
 ## 0.1.0a1 - 2026-08-01
 

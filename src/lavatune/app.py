@@ -40,6 +40,8 @@ from .organism import (
     AudioForces,
     Body,
     FieldFrame,
+    NarrativeState,
+    NarrativeTracker,
     OrganismFieldRenderer,
     TileComposition,
 )
@@ -284,6 +286,8 @@ class ReactionLatch:
     transient: float = 0.0
     pulse: float = 0.0
     novelty: float = 0.0
+    rhythm_density: float = 0.0
+    rhythm_impulse: float = 0.0
     hits: tuple[float, ...] = (0.0,) * 8
     deviations: tuple[float, ...] = (0.0,) * 8
     requested_at: float = 0.0
@@ -294,6 +298,8 @@ class ReactionLatch:
             self.transient,
             self.pulse,
             self.novelty,
+            self.rhythm_density,
+            self.rhythm_impulse,
             max(self.hits, default=0.0),
             max(self.deviations, default=0.0),
         )
@@ -306,6 +312,8 @@ class ReactionLatch:
         self.transient = max(self.transient, forces.transient)
         self.pulse = max(self.pulse, forces.pulse)
         self.novelty = max(self.novelty, affect.novelty)
+        self.rhythm_density = max(self.rhythm_density, forces.rhythm_density)
+        self.rhythm_impulse = min(1.0, self.rhythm_impulse + forces.rhythm_impulse)
         self.hits = tuple(max(old, new) for old, new in zip(self.hits, forces.hits))
         self.deviations = tuple(
             max(old, new) for old, new in zip(self.deviations, forces.deviations)
@@ -319,6 +327,8 @@ class ReactionLatch:
             transient=max(forces.transient, self.transient),
             pulse=max(forces.pulse, self.pulse),
             flux=max(forces.flux, self.novelty * 0.72),
+            rhythm_density=max(forces.rhythm_density, self.rhythm_density),
+            rhythm_impulse=max(forces.rhythm_impulse, self.rhythm_impulse),
             hits=tuple(max(old, new) for old, new in zip(forces.hits, self.hits)),
             deviations=tuple(
                 max(old, new) for old, new in zip(forces.deviations, self.deviations)
@@ -327,6 +337,8 @@ class ReactionLatch:
         self.transient = 0.0
         self.pulse = 0.0
         self.novelty *= 0.24
+        self.rhythm_density = 0.0
+        self.rhythm_impulse = 0.0
         self.hits = (0.0,) * 8
         self.deviations = (0.0,) * 8
         self.requested_at = 0.0
@@ -336,6 +348,8 @@ class ReactionLatch:
         self.transient = 0.0
         self.pulse = 0.0
         self.novelty = 0.0
+        self.rhythm_density = 0.0
+        self.rhythm_impulse = 0.0
         self.hits = (0.0,) * 8
         self.deviations = (0.0,) * 8
         self.requested_at = 0.0
@@ -350,11 +364,13 @@ class LavaField:
         self.motion_profile = motion_profile
         self.mapper = AudioForceMapper()
         self.affect_tracker = AffectiveTracker()
+        self.narrative_tracker = NarrativeTracker()
         self.organism = AcousticOrganism()
         self.renderer = OrganismFieldRenderer()
         self.forces = AudioForces()
         self.render_forces = AudioForces()
         self.affect = AffectiveState()
+        self.narrative = NarrativeState()
         self.reactions = ReactionLatch()
         self.metrics = RuntimeMetrics()
         self.field_frame = FieldFrame.empty(0, 0)
@@ -440,11 +456,13 @@ class LavaField:
         capacity = max(1, len(self.organism.bodies))
         self.mapper.reset()
         self.affect_tracker.reset()
+        self.narrative_tracker.reset()
         self.organism.reset(capacity)
         self.organism.seed_for_tile(self.w, self.h, capacity)
         self.forces = AudioForces()
         self.render_forces = AudioForces()
         self.affect = AffectiveState()
+        self.narrative = NarrativeState()
         self.reactions.clear()
         self._last_step_at = None
         self._last_audio_key = None
@@ -464,6 +482,11 @@ class LavaField:
         self.metrics.map_seconds += time.perf_counter() - started
         started = time.perf_counter()
         self.affect = self.affect_tracker.update(self.forces, float(frame.timestamp))
+        self.narrative = self.narrative_tracker.update(
+            self.forces,
+            self.affect,
+            float(frame.timestamp),
+        )
         self.metrics.affect_seconds += time.perf_counter() - started
         self.reactions.observe(self.forces, self.affect, time.monotonic())
         self._last_audio_key = key
@@ -510,6 +533,7 @@ class LavaField:
                     self.motion_profile,
                     cell_aspect,
                     self.affect,
+                    self.narrative,
                 )
             self.metrics.physics_steps += substeps
             self.metrics.physics_seconds += time.perf_counter() - physics_started
@@ -639,7 +663,13 @@ def _effective_fps(
     band_peak = max(frame.bands) if frame.bands else 0.0
     mapped = forces or AudioForces()
     mapped_peak = max(mapped.bass, mapped.voice, mapped.detail, mapped.energy)
-    if frame.attack >= 0.08 or mapped.transient >= 0.16 or mapped.pulse >= 0.18:
+    if (
+        frame.attack >= 0.08
+        or mapped.transient >= 0.16
+        or mapped.pulse >= 0.18
+        or mapped.rhythm_density >= 0.28
+        or mapped.rhythm_impulse >= 0.18
+    ):
         activity_target = 14
     elif frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28:
         activity_target = 8
@@ -669,6 +699,7 @@ class FrameScheduler:
     breathing_until: float = 0.0
     immediate: bool = True
     last_release: float = 0.0
+    last_snap: float = 0.0
 
     def observe(
         self,
@@ -681,12 +712,17 @@ class FrameScheduler:
         band_peak = max(frame.bands, default=0.0)
         mapped_peak = max(forces.bass, forces.voice, forces.detail, forces.energy)
         release_started = affect.release >= 0.16 and self.last_release < 0.16
+        snap_started = affect.snap >= 0.16 and self.last_snap < 0.16
         self.last_release = affect.release
+        self.last_snap = affect.snap
         burst = (
             reaction_level >= 0.14
             or frame.attack >= 0.08
             or affect.novelty >= 0.16
+            or forces.rhythm_density >= 0.28
+            or forces.rhythm_impulse >= 0.18
             or release_started
+            or snap_started
         )
         engaged = frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28
         breathing = frame.rms >= 0.025 or band_peak >= 0.065 or mapped_peak >= 0.09
@@ -1398,7 +1434,10 @@ def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: A
         status = (
             f"{preset} | {react} | {ui.resolved_mode} | {state} | "
             f"tone {field.forces.tone:0.2f} | tempo {field.forces.tempo:0.2f} | "
-            f"pulse {field.forces.pulse:0.2f} | "
+            f"pulse {field.forces.pulse:0.2f} | density {field.forces.rhythm_density:0.2f} | "
+            f"hold/snap {field.affect.restraint:0.2f}/{field.affect.snap:0.2f} | "
+            f"story {field.narrative.expectation:0.1f}/"
+            f"{field.narrative.interruption:0.1f}/{field.narrative.resolution:0.1f} | "
             f"l/m/h {field.last_low:0.1f}/{field.last_mid:0.1f}/{field.last_high:0.1f}"
         )
     else:

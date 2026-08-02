@@ -26,6 +26,9 @@ from lavatune.organism import (
     AffectiveTracker,
     AudioForceMapper,
     AudioForces,
+    NarrativeState,
+    NarrativeTracker,
+    adaptive_centroid_axis,
     circulation_at,
     compose_tile,
     habitat_anchor,
@@ -99,6 +102,180 @@ class AudioForceTests(unittest.TestCase):
         self.assertGreater(built.agitation, 0.28)
         self.assertGreater(released.release, 0.45)
         self.assertGreater(released.tension, 0.20)
+
+    def test_restraint_saturates_so_ten_and_long_waits_snap_alike(self) -> None:
+        calm = AudioForces(
+            voice=0.28,
+            detail=0.38,
+            energy=0.20,
+            level=0.20,
+            bands=(0.12, 0.14, 0.18, 0.22, 0.20, 0.19, 0.16, 0.13),
+        )
+        attack = AudioForces(
+            bass=0.82,
+            voice=0.68,
+            detail=0.74,
+            transient=0.92,
+            energy=0.94,
+            level=0.94,
+            pulse=0.84,
+            flux=0.72,
+            bands=(0.82, 0.78, 0.74, 0.86, 0.80, 0.88, 0.92, 0.84),
+        )
+        sustain = AudioForces(
+            bass=0.78,
+            voice=0.64,
+            detail=0.68,
+            energy=0.90,
+            level=0.90,
+            pulse=0.24,
+            bands=(0.78, 0.74, 0.70, 0.82, 0.76, 0.84, 0.88, 0.80),
+        )
+
+        def snap_after(seconds: float) -> tuple[AffectiveState, AffectiveState]:
+            tracker = AffectiveTracker()
+            steps = round(seconds / 0.10)
+            held = AffectiveState()
+            for index in range(steps):
+                held = tracker.update(calm, 1.0 + index * 0.10)
+            tracker.update(attack, 1.0 + steps * 0.10)
+            snapped = tracker.update(sustain, 1.1 + steps * 0.10)
+            return held, snapped
+
+        short_hold, early = snap_after(10.0)
+        long_hold, late = snap_after(130.0)
+
+        self.assertEqual(short_hold.restraint, 1.0)
+        self.assertEqual(long_hold.restraint, 1.0)
+        self.assertGreater(early.snap, 0.65)
+        self.assertAlmostEqual(early.snap, late.snap, delta=0.04)
+        self.assertAlmostEqual(early.catharsis, late.catharsis, delta=0.08)
+
+    def test_brief_pause_does_not_earn_full_snap_choreography(self) -> None:
+        tracker = AffectiveTracker()
+        calm = AudioForces(energy=0.18, level=0.18, detail=0.32, bands=(0.14,) * 8)
+        attack = AudioForces(
+            energy=0.94,
+            level=0.94,
+            transient=0.92,
+            pulse=0.82,
+            flux=0.70,
+            bands=(0.86,) * 8,
+        )
+        sustain = AudioForces(energy=0.90, level=0.90, bands=(0.82,) * 8)
+        for index in range(20):
+            tracker.update(calm, 1.0 + index * 0.10)
+
+        tracker.update(attack, 3.0)
+        snapped = tracker.update(sustain, 3.1)
+
+        self.assertLess(snapped.restraint, 0.30)
+        self.assertLess(snapped.snap, 0.30)
+
+    def test_single_notification_after_restraint_stays_a_local_event(self) -> None:
+        tracker = AffectiveTracker()
+        calm = AudioForces(energy=0.18, level=0.18, detail=0.28, bands=(0.12,) * 8)
+        notification = AudioForces(
+            energy=0.92,
+            level=0.92,
+            transient=0.96,
+            pulse=0.88,
+            flux=0.76,
+            bands=(0.88,) * 8,
+        )
+        for index in range(110):
+            tracker.update(calm, 1.0 + index * 0.10)
+
+        candidate = tracker.update(notification, 12.0)
+        after = tracker.update(AudioForces(), 12.1)
+
+        self.assertLess(candidate.snap, 0.10)
+        self.assertLess(after.snap, 0.10)
+
+    def test_gradual_crescendo_opens_without_false_snap(self) -> None:
+        tracker = AffectiveTracker()
+        calm_bands = (0.12,) * 8
+        for index in range(110):
+            tracker.update(
+                AudioForces(energy=0.18, level=0.18, detail=0.26, bands=calm_bands),
+                1.0 + index * 0.10,
+            )
+
+        peak_snap = 0.0
+        for index in range(40):
+            amount = index / 39.0
+            state = tracker.update(
+                AudioForces(
+                    energy=0.18 + amount * 0.70,
+                    level=0.18 + amount * 0.70,
+                    detail=0.26 + amount * 0.34,
+                    transient=0.015,
+                    pulse=0.02,
+                    bands=tuple(0.12 + amount * 0.66 for _ in range(8)),
+                ),
+                12.0 + index * 0.10,
+            )
+            peak_snap = max(peak_snap, state.snap)
+
+        self.assertLess(peak_snap, 0.10)
+        self.assertGreater(state.openness, 0.12)
+
+    def test_already_loud_audio_cannot_prime_a_full_snap(self) -> None:
+        tracker = AffectiveTracker()
+        loud = AudioForces(
+            energy=0.82,
+            level=0.82,
+            bass=0.64,
+            detail=0.60,
+            bands=(0.72,) * 8,
+        )
+        for index in range(120):
+            tracker.update(loud, 1.0 + index * 0.10)
+        tracker.update(
+            AudioForces(
+                energy=0.96,
+                level=0.96,
+                transient=0.90,
+                pulse=0.82,
+                flux=0.60,
+                bands=(0.90,) * 8,
+            ),
+            13.0,
+        )
+        state = tracker.update(
+            AudioForces(energy=0.92, level=0.92, bands=(0.86,) * 8), 13.1
+        )
+
+        self.assertLess(state.restraint, 0.10)
+        self.assertLess(state.snap, 0.15)
+
+    def test_mapped_quiet_to_loud_frames_preserve_snap_contrast(self) -> None:
+        mapper = AudioForceMapper()
+        tracker = AffectiveTracker()
+        quiet_bands = [0.10, 0.11, 0.13, 0.15, 0.14, 0.12, 0.10, 0.09]
+        for index in range(120):
+            quiet = mapper.map(
+                AudioFrame(0.08, quiet_bands, 0.0, 0.06, 1.0 + index * 0.10),
+                "music",
+                1.0,
+            )
+            held = tracker.update(quiet, 1.0 + index * 0.10)
+
+        attack = mapper.map(
+            AudioFrame(0.65, [0.80] * 8, 0.90, 0.18, 13.0),
+            "music",
+            1.0,
+        )
+        tracker.update(attack, 13.0)
+        sustain = mapper.map(
+            AudioFrame(0.58, [0.75] * 8, 0.02, 0.16, 13.1),
+            "music",
+            1.0,
+        )
+        snapped = tracker.update(sustain, 13.1)
+
+        self.assertEqual(held.restraint, 1.0)
+        self.assertGreater(snapped.snap, 0.60)
 
     def test_midwest_emo_arc_moves_from_fragile_yearning_to_catharsis(self) -> None:
         tracker = AffectiveTracker()
@@ -176,6 +353,21 @@ class AudioForceTests(unittest.TestCase):
         retained = field.reactions.consume(AudioForces())
 
         self.assertEqual(retained.deviations, deviation)
+        self.assertFalse(field.reactions.pending)
+
+    def test_reaction_latch_accumulates_rapid_impulses_between_physics_steps(self) -> None:
+        field = LavaField()
+
+        for timestamp in (1.0, 1.05, 1.10):
+            field.reactions.observe(
+                AudioForces(rhythm_density=0.72, rhythm_impulse=0.24),
+                AffectiveState(),
+                timestamp,
+            )
+        retained = field.reactions.consume(AudioForces())
+
+        self.assertGreater(retained.rhythm_impulse, 0.60)
+        self.assertEqual(retained.rhythm_density, 0.72)
         self.assertFalse(field.reactions.pending)
 
     def test_capture_frames_are_mapped_between_lower_cadence_draws(self) -> None:
@@ -267,6 +459,120 @@ class AudioForceTests(unittest.TestCase):
 
         self.assertGreater(fast.tempo, slow.tempo + 0.25)
 
+    def test_rapid_subdivisions_drive_density_without_starving_tempo(self) -> None:
+        mapper = AudioForceMapper()
+        bands = [0.42, 0.48, 0.56, 0.64, 0.52, 0.45, 0.38, 0.31]
+
+        for index in range(18):
+            mapped = mapper.map(
+                AudioFrame(0.48, bands, 0.52, 0.16, 1.0 + index * 0.10),
+                "music",
+                1.0,
+            )
+
+        self.assertGreater(mapped.rhythm_density, 0.55)
+        self.assertGreater(mapped.tempo, 0.45)
+        self.assertGreater(mapped.rhythm_impulse, 0.20)
+
+        for index in range(14):
+            settled = mapper.map(
+                AudioFrame(0.48, bands, 0.0, 0.16, 2.8 + index * 0.10),
+                "music",
+                1.0,
+            )
+
+        self.assertLess(settled.rhythm_density, 0.08)
+        self.assertEqual(settled.rhythm_impulse, 0.0)
+
+    def test_steady_compressed_audio_does_not_fake_rapid_density(self) -> None:
+        mapper = AudioForceMapper()
+        bands = [0.62] * 8
+
+        for index in range(24):
+            mapped = mapper.map(
+                AudioFrame(0.62, bands, 0.0, 0.14, 1.0 + index * 0.05),
+                "music",
+                1.0,
+            )
+
+        self.assertLess(mapped.rhythm_density, 0.08)
+        self.assertEqual(mapped.rhythm_impulse, 0.0)
+
+
+class NarrativeTests(unittest.TestCase):
+    def test_predictable_motion_builds_expectation(self) -> None:
+        tracker = NarrativeTracker()
+        predictable = AudioForces(tempo=0.68, energy=0.46, flux=0.03)
+        stable = AffectiveState(volatility=0.08)
+
+        for index in range(60):
+            state = tracker.update(predictable, stable, 1.0 + index * 0.10)
+
+        self.assertGreater(state.expectation, 0.65)
+        self.assertLess(state.interruption, 0.05)
+
+    def test_expectation_gives_the_same_surprise_more_context(self) -> None:
+        predictable = AudioForces(tempo=0.68, energy=0.46, flux=0.03)
+        stable = AffectiveState(volatility=0.08)
+        surprise = AudioForces(
+            transient=0.90,
+            energy=0.84,
+            flux=0.82,
+            deviations=(0.78,) * 8,
+        )
+
+        primed = NarrativeTracker()
+        for index in range(60):
+            primed.update(predictable, stable, 1.0 + index * 0.10)
+        contextual = primed.update(surprise, AffectiveState(volatility=0.82), 7.0)
+
+        fresh = NarrativeTracker()
+        isolated = fresh.update(surprise, AffectiveState(volatility=0.82), 7.0)
+
+        self.assertGreater(contextual.interruption, 0.55)
+        self.assertGreater(contextual.interruption, isolated.interruption * 8.0)
+
+    def test_resolution_requires_prior_tension_and_release(self) -> None:
+        forces = AudioForces(energy=0.24, flux=0.02)
+        tracker = NarrativeTracker()
+
+        resolved = tracker.update(
+            forces,
+            AffectiveState(tension=0.82, release=0.78, catharsis=0.62),
+            1.0,
+        )
+        unearned = NarrativeTracker().update(
+            forces,
+            AffectiveState(tension=0.04, release=0.78, catharsis=0.62),
+            1.0,
+        )
+
+        self.assertGreater(resolved.resolution, 0.55)
+        self.assertLess(unearned.resolution, 0.05)
+
+    def test_silence_does_not_prime_a_notification_as_narrative_interruption(self) -> None:
+        tracker = NarrativeTracker()
+        for index in range(100):
+            quiet = tracker.update(
+                AudioForces(level=0.0),
+                AffectiveState(),
+                1.0 + index * 0.10,
+            )
+
+        notification = tracker.update(
+            AudioForces(
+                level=0.92,
+                transient=0.96,
+                flux=0.82,
+                deviations=(0.84,) * 8,
+            ),
+            AffectiveState(volatility=0.90),
+            11.0,
+        )
+
+        self.assertLess(quiet.expectation, 0.05)
+        self.assertLess(notification.interruption, 0.10)
+
 
 class CompositionTests(unittest.TestCase):
     def test_embodied_mirror_contracts_under_tension_and_opens_on_release(self) -> None:
@@ -299,6 +605,65 @@ class CompositionTests(unittest.TestCase):
 
         self.assertLess(contracted, 0.23)
         self.assertGreater(released, contracted * 1.55)
+
+    def test_confirmed_snap_breaks_the_group_open_without_spending_attention(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def run(affect: AffectiveState) -> tuple[float, list[float]]:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            for _ in range(48):
+                organism.update(
+                    1.0 / 22.0,
+                    AudioForces(energy=0.72),
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    affect,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            spread = sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+            return spread, [body.spike for body in organism.bodies[:4]]
+
+        ordinary_spread, _ = run(AffectiveState())
+        snap_spread, spikes = run(AffectiveState(snap=0.86, catharsis=0.78))
+
+        self.assertGreater(snap_spread, ordinary_spread * 1.25)
+        self.assertEqual(spikes, [0.0] * 4)
+
+    def test_narrative_context_reuses_contraction_and_release_motion(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def spread(narrative: NarrativeState) -> float:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            for _ in range(80):
+                organism.update(
+                    1.0 / 22.0,
+                    AudioForces(energy=0.46),
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    AffectiveState(),
+                    narrative,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            return sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+
+        expected = spread(NarrativeState(expectation=0.88))
+        interrupted = spread(NarrativeState(interruption=0.86, resolution=0.62))
+
+        self.assertGreater(interrupted, expected * 1.35)
 
     def test_midwest_emo_posture_reaches_then_breaks_open(self) -> None:
         config = LavaConfig(blobs=4)
@@ -407,6 +772,47 @@ class CompositionTests(unittest.TestCase):
         self.assertTrue(all(change > 0.008 for change in shape_changes))
         self.assertGreater(max(shape_changes) - min(shape_changes), 0.01)
 
+    def test_rapid_density_adds_flutter_without_spending_directional_spikes(self) -> None:
+        config = LavaConfig(blobs=4)
+        steady = AcousticOrganism(body_limit=4)
+        rapid = AcousticOrganism(body_limit=4)
+        steady.seed_for_tile(44, 18, 4)
+        rapid.seed_for_tile(44, 18, 4)
+
+        for index in range(36):
+            steady.update(
+                1.0 / 22.0,
+                AudioForces(energy=0.62, tempo=0.72),
+                44,
+                18,
+                config,
+                "buoyant",
+            )
+            rapid.update(
+                1.0 / 22.0,
+                AudioForces(
+                    energy=0.62,
+                    tempo=0.72,
+                    rhythm_density=0.82,
+                    rhythm_impulse=0.48 if index % 3 == 0 else 0.0,
+                ),
+                44,
+                18,
+                config,
+                "buoyant",
+            )
+
+        pose_delta = sum(
+            abs(dense.x - plain.x)
+            + abs(dense.y - plain.y)
+            + abs(dense.stretch_x - plain.stretch_x)
+            + abs(dense.stretch_y - plain.stretch_y)
+            for plain, dense in zip(steady.bodies[:4], rapid.bodies[:4])
+        )
+
+        self.assertGreater(pose_delta, 0.08)
+        self.assertEqual([body.spike for body in rapid.bodies[:4]], [0.0] * 4)
+
     def test_tile_composition_changes_topology_instead_of_only_scale(self) -> None:
         self.assertEqual(compose_tile(24, 10, 8).active_bodies, 1)
         self.assertEqual(compose_tile(30, 24, 8).active_bodies, 3)
@@ -490,6 +896,61 @@ class CompositionTests(unittest.TestCase):
             math.hypot(before_x - 0.5, before_y - 0.52),
         )
         self.assertGreater(after_spacing, before_spacing * 0.55)
+
+    def test_adaptive_centroid_leaves_middle_motion_free_and_bleeds_outward_momentum(self) -> None:
+        self.assertEqual(adaptive_centroid_axis(0.66, 0.5, 0.12, 0.20), 0.0)
+        self.assertEqual(adaptive_centroid_axis(0.34, 0.5, -0.12, 0.20), 0.0)
+
+        right_outward = adaptive_centroid_axis(0.86, 0.5, 0.12, 0.20)
+        right_inward = adaptive_centroid_axis(0.86, 0.5, -0.12, 0.20)
+        left_outward = adaptive_centroid_axis(0.14, 0.5, -0.12, 0.20)
+
+        self.assertLess(right_outward, right_inward)
+        self.assertLess(right_inward, 0.0)
+        self.assertAlmostEqual(left_outward, -right_outward)
+
+    def test_wide_current_returns_as_a_group_after_sustained_edge_dwell(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        organism.seed_for_tile(90, 12, 4)
+        for body in organism.bodies[:4]:
+            body.x = min(0.90, max(0.66, body.x + 0.34))
+            body.y = min(0.82, max(0.58, body.y + 0.18))
+            body.vx = 0.12
+            body.vy = 0.07
+            body.presence = 1.0
+        before_spacing = math.hypot(
+            organism.bodies[0].x - organism.bodies[1].x,
+            organism.bodies[0].y - organism.bodies[1].y,
+        )
+
+        sustained = AudioForces(
+            bass=0.72,
+            voice=0.48,
+            energy=0.76,
+            tempo=0.72,
+            pulse=0.38,
+            rhythm_density=0.66,
+        )
+        for _ in range(12):
+            organism.update(1.0 / 22.0, sustained, 90, 12, config, "buoyant")
+        brief_x, brief_y = organism.center_of_mass(4)
+
+        for _ in range(648):
+            organism.update(1.0 / 22.0, sustained, 90, 12, config, "buoyant")
+        returned_x, returned_y = organism.center_of_mass(4)
+        after_spacing = math.hypot(
+            organism.bodies[0].x - organism.bodies[1].x,
+            organism.bodies[0].y - organism.bodies[1].y,
+        )
+
+        self.assertGreater(brief_x, 0.70)
+        self.assertGreater(brief_y, 0.66)
+        self.assertLess(abs(returned_x - 0.5), abs(brief_x - 0.5))
+        self.assertLess(abs(returned_y - 0.53), abs(brief_y - 0.53))
+        self.assertLess(abs(returned_x - 0.5), 0.22)
+        self.assertLess(abs(returned_y - 0.53), 0.22)
+        self.assertGreater(after_spacing, before_spacing * 0.50)
 
     def test_first_viewport_seeds_the_cast_in_its_actual_habitat(self) -> None:
         field = LavaField()

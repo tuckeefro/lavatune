@@ -38,10 +38,13 @@ class AudioForces:
     detail: float = 0.0
     transient: float = 0.0
     energy: float = 0.0
+    level: float = -1.0
     tone: float = 0.5
     tempo: float = 0.0
     pulse: float = 0.0
     flux: float = 0.0
+    rhythm_density: float = 0.0
+    rhythm_impulse: float = 0.0
     bands: tuple[float, ...] = (0.0,) * 8
     hits: tuple[float, ...] = (0.0,) * 8
     deviations: tuple[float, ...] = (0.0,) * 8
@@ -63,6 +66,17 @@ class AffectiveState:
     fragility: float = 0.0
     yearning: float = 0.0
     catharsis: float = 0.0
+    restraint: float = 0.0
+    snap: float = 0.0
+
+
+@dataclass(slots=True, frozen=True)
+class NarrativeState:
+    """Authored temporal meaning without named-emotion classification."""
+
+    expectation: float = 0.0
+    interruption: float = 0.0
+    resolution: float = 0.0
 
 
 class AffectiveTracker:
@@ -73,6 +87,12 @@ class AffectiveTracker:
         self._last_energy = 0.0
         self._last_bands = (0.0,) * 8
         self._last_at = 0.0
+        self._restraint_seconds = 0.0
+        self._slow_energy = 0.0
+        self._slow_bands = (0.0,) * 8
+        self._context_initialized = False
+        self._snap_candidate = 0.0
+        self._snap_candidate_age = 0.0
 
     def reset(self) -> None:
         self.__init__()
@@ -85,17 +105,80 @@ class AffectiveTracker:
             self._last_at = timestamp
 
         bands = forces.bands or (0.0,) * 8
+        signal_level = forces.level if forces.level >= 0.0 else forces.energy
         mean = sum(bands) / max(1, len(bands))
         spread = math.sqrt(sum((value - mean) ** 2 for value in bands) / max(1, len(bands)))
         novelty = sum(abs(value - old) for value, old in zip(bands, self._last_bands)) / 8.0
         novelty = clamp(novelty * 1.8 + forces.flux * 0.55 + max(forces.hits) * 0.25)
         self._last_bands = tuple(bands)
 
+        if not self._context_initialized:
+            self._slow_energy = signal_level
+            self._slow_bands = tuple(bands)
+            self._context_initialized = True
+        energy_contrast = max(0.0, signal_level - self._slow_energy)
+        band_rises = tuple(
+            current - baseline for current, baseline in zip(bands, self._slow_bands)
+        )
+        band_contrast = sum(max(0.0, rise) for rise in band_rises) / max(
+            1, len(band_rises)
+        )
+        coherent_rises = sum(rise >= 0.10 for rise in band_rises)
+
+        # Restraint establishes context, then saturates. Continued calm never
+        # charges a larger response than an already-qualified short passage.
+        restrained = (
+            signal_level <= 0.38
+            and forces.transient <= 0.16
+            and forces.pulse <= 0.18
+            and forces.rhythm_density <= 0.22
+        )
+        if restrained:
+            self._restraint_seconds = min(8.0, self._restraint_seconds + dt)
+        else:
+            self._restraint_seconds = max(0.0, self._restraint_seconds - dt * 0.55)
+        restraint = clamp(self._restraint_seconds / 8.0)
+
+        # A snap needs both a credible attack and a coherent multi-band change,
+        # then one confirming frame of sustained contrast. This keeps a lone
+        # notification local while allowing a musical break to open the group.
+        attack_gate = (
+            forces.transient >= 0.38
+            or forces.pulse >= 0.42
+            or forces.rhythm_impulse >= 0.30
+        )
+        coherent_change = energy_contrast >= 0.28 and coherent_rises >= 3
+        contrast_strength = clamp(energy_contrast * 0.85 + band_contrast * 0.75)
+        snap_target = 0.0
+        if attack_gate and coherent_change and restraint >= 0.12:
+            self._snap_candidate = max(self._snap_candidate, contrast_strength)
+            self._snap_candidate_age = 0.0
+        elif self._snap_candidate > 0.0:
+            self._snap_candidate_age += dt
+            sustained_change = energy_contrast >= 0.20 and coherent_rises >= 3
+            if sustained_change and self._snap_candidate_age <= 0.24:
+                snap_target = clamp(self._snap_candidate * 1.35) * restraint
+                self._restraint_seconds = 0.0
+                restraint = 0.0
+                self._snap_candidate = 0.0
+                self._snap_candidate_age = 0.0
+            elif self._snap_candidate_age > 0.24 or energy_contrast < 0.10:
+                self._snap_candidate = 0.0
+                self._snap_candidate_age = 0.0
+
+        context_amount = 1.0 - math.exp(-dt / 12.0)
+        self._slow_energy = lerp(self._slow_energy, signal_level, context_amount)
+        self._slow_bands = tuple(
+            lerp(baseline, current, context_amount)
+            for baseline, current in zip(self._slow_bands, bands)
+        )
+
         agitation_target = clamp(
             forces.transient * 0.48
             + forces.pulse * 0.30
             + forces.flux * 0.42
             + forces.tempo * 0.18
+            + forces.rhythm_density * 0.24
         )
         cohesion_target = clamp(1.0 - spread * 2.4 + forces.voice * 0.10)
         openness_target = clamp(spread * 2.1 + forces.detail * 0.28 + forces.tone * 0.12)
@@ -132,6 +215,7 @@ class AffectiveTracker:
                 + energy_rise * 1.10
             )
             + release_target * 0.30
+            + snap_target * 0.90
         )
         self._last_energy = forces.energy
 
@@ -146,6 +230,10 @@ class AffectiveTracker:
             self.state.catharsis * math.exp(-dt / 0.95),
             catharsis_target,
         )
+        snap = max(
+            self.state.snap * math.exp(-dt / 0.48),
+            snap_target,
+        )
         self.state = AffectiveState(
             weight=lerp(self.state.weight, weight_target, atmosphere),
             agitation=lerp(self.state.agitation, agitation_target, phrase),
@@ -159,6 +247,71 @@ class AffectiveTracker:
             fragility=lerp(self.state.fragility, fragility_target, phrase),
             yearning=lerp(self.state.yearning, yearning_target, phrase),
             catharsis=catharsis,
+            restraint=restraint,
+            snap=snap,
+        )
+        return self.state
+
+
+class NarrativeTracker:
+    """Interpret current gestures through recent predictability and posture."""
+
+    def __init__(self) -> None:
+        self.state = NarrativeState()
+        self._last_at = 0.0
+
+    def reset(self) -> None:
+        self.__init__()
+
+    def update(
+        self,
+        forces: AudioForces,
+        affect: AffectiveState,
+        timestamp: float,
+    ) -> NarrativeState:
+        dt = 1.0 / 16.0
+        if timestamp > 0.0 and self._last_at > 0.0 and timestamp > self._last_at:
+            dt = clamp(timestamp - self._last_at, 1.0 / 120.0, 0.35)
+        if timestamp > 0.0:
+            self._last_at = timestamp
+
+        signal_level = forces.level if forces.level >= 0.0 else forces.energy
+        predictability = clamp(
+            forces.tempo * 0.35
+            + (1.0 - forces.flux) * 0.25
+            + (1.0 - affect.volatility) * 0.40
+        )
+        activity_gate = clamp((signal_level - 0.03) / 0.20)
+        predictability *= activity_gate
+        expectation = lerp(
+            self.state.expectation,
+            predictability,
+            time_amount(0.06, dt),
+        )
+        surprise = clamp(
+            forces.transient * 0.50
+            + forces.flux * 0.55
+            + max(forces.deviations, default=0.0) * 0.35
+            + affect.snap * 0.65
+        )
+        interruption_target = clamp(self.state.expectation * surprise)
+        interruption = max(
+            self.state.interruption * math.exp(-dt / 0.45),
+            interruption_target,
+        )
+        resolution_target = clamp(
+            affect.tension * (affect.release * 0.70 + affect.catharsis * 0.45)
+        )
+        resolution = max(
+            self.state.resolution * math.exp(-dt / 1.20),
+            resolution_target,
+        )
+        expectation *= 1.0 - interruption * 0.35
+
+        self.state = NarrativeState(
+            expectation=expectation,
+            interruption=interruption,
+            resolution=resolution,
         )
         return self.state
 
@@ -197,7 +350,10 @@ class AudioForceMapper:
         self._tone = 0.5
         self._tempo = 0.0
         self._pulse = 0.0
-        self._last_onset_at = 0.0
+        self._rhythm_density = 0.0
+        self._last_density_onset_at = 0.0
+        self._last_tempo_onset_at = 0.0
+        self._onset_gate_until = 0.0
         self._raw_bands = [0.0] * 8
         self._bands = [0.0] * 8
         self._hits = [0.0] * 8
@@ -252,13 +408,45 @@ class AudioForceMapper:
         pulse_target = clamp(transient_target * 0.70 + flux * 1.45)
         self._pulse = max(self._pulse * (0.66 ** (dt * 22.0)), pulse_target)
 
-        if pulse_target > 0.20 and timestamp > 0.0:
-            interval = timestamp - self._last_onset_at if self._last_onset_at else 0.0
-            if 0.14 <= interval <= 1.5:
-                pulses_per_second = 1.0 / interval
+        # Beat tempo and rapid subdivision density are related but distinct.
+        # A short refractory gate rejects duplicate analysis frames while still
+        # accepting fast 1/16-note and machine-gun patterns. Fast events do not
+        # move the tempo anchor until enough time has elapsed to infer a beat.
+        self._rhythm_density *= math.exp(-dt / 0.42)
+        rhythm_impulse = 0.0
+        onset_cue = attack >= 0.045 or flux >= 0.035
+        onset_event = (
+            pulse_target > 0.20
+            and onset_cue
+            and timestamp > 0.0
+            and timestamp >= self._onset_gate_until
+        )
+        if onset_event:
+            rhythm_impulse = clamp(pulse_target * 0.70 + attack * 0.30)
+            density_interval = (
+                timestamp - self._last_density_onset_at
+                if self._last_density_onset_at
+                else 0.0
+            )
+            if 0.035 <= density_interval <= 0.22:
+                density_target = clamp((0.22 - density_interval) / 0.16)
+                density_target *= 0.60 + rhythm_impulse * 0.40
+                self._rhythm_density = max(self._rhythm_density, density_target)
+            self._last_density_onset_at = timestamp
+            self._onset_gate_until = timestamp + 0.035
+
+            tempo_interval = (
+                timestamp - self._last_tempo_onset_at
+                if self._last_tempo_onset_at
+                else 0.0
+            )
+            if not self._last_tempo_onset_at or tempo_interval > 1.5:
+                self._last_tempo_onset_at = timestamp
+            elif tempo_interval >= 0.14:
+                pulses_per_second = 1.0 / tempo_interval
                 tempo_target = clamp((pulses_per_second - 0.65) / 3.1)
                 self._tempo = lerp(self._tempo, tempo_target, time_amount(0.24, dt))
-            self._last_onset_at = timestamp
+                self._last_tempo_onset_at = timestamp
         else:
             self._tempo = lerp(self._tempo, clamp(flux * 2.8), time_amount(0.025, dt))
 
@@ -288,10 +476,13 @@ class AudioForceMapper:
             detail=clamp(self._detail * detail_gain * response),
             transient=clamp(self._transient * hit_gain * response),
             energy=clamp(self._energy * response),
+            level=clamp(frame.rms),
             tone=clamp(self._tone),
             tempo=clamp(self._tempo),
             pulse=clamp(self._pulse * hit_gain * response),
             flux=clamp(flux * response * 2.0),
+            rhythm_density=clamp(self._rhythm_density * response),
+            rhythm_impulse=clamp(rhythm_impulse * hit_gain * response),
             bands=tuple(clamp(value * response) for value in self._bands),
             hits=tuple(clamp(value * response) for value in self._hits),
             deviations=tuple(clamp(value * response) for value in deviations),
@@ -439,6 +630,32 @@ def tile_axis_scales(
     physical_height = float(max(6, height)) * clamp(cell_aspect, 1.0, 3.0)
     reference = min(physical_width, physical_height)
     return reference / physical_width, reference / physical_height
+
+
+def adaptive_centroid_axis(
+    position: float,
+    target: float,
+    velocity: float,
+    dead_zone: float,
+) -> float:
+    """Return a soft shared correction only when a cast leaves its useful middle."""
+
+    displacement = position - target
+    distance = abs(displacement)
+    if distance <= dead_zone:
+        return 0.0
+
+    available_edge = max(target, 1.0 - target)
+    pressure = clamp((distance - dead_zone) / max(0.05, available_edge - dead_zone))
+    pressure = pressure * pressure * (3.0 - 2.0 * pressure)
+    direction = 1.0 if displacement > 0.0 else -1.0
+    leash = -direction * pressure * 0.22
+
+    # Remove only momentum that carries the whole cast farther outward. An
+    # inward return and motion parallel to an edge remain part of the current.
+    outward_velocity = velocity * direction
+    momentum_bleed = -velocity * pressure * 1.35 if outward_velocity > 0.0 else 0.0
+    return leash + momentum_bleed
 
 
 def circulation_at(
@@ -631,7 +848,12 @@ class AcousticOrganism:
         """Emit on rising events, then let pressure cross the vessel over time."""
 
         self._wave_cooldown = max(0.0, self._wave_cooldown - dt)
-        event = max(forces.transient * 0.92, forces.pulse * 0.78, forces.flux * 0.46)
+        event = max(
+            forces.transient * 0.92,
+            forces.pulse * 0.78,
+            forces.flux * 0.46,
+            forces.rhythm_impulse * 0.70,
+        )
         rising = event > max(0.18, self._last_event + 0.055)
         if rising and self._wave_cooldown <= 0.0:
             # Pitch chooses an edge, while phase prevents repeated beats from
@@ -668,6 +890,7 @@ class AcousticOrganism:
         motion_name: str = "neutral",
         cell_aspect: float = CELL_ASPECT,
         affective: AffectiveState | None = None,
+        narrative: NarrativeState | None = None,
     ) -> TileComposition:
         dt = clamp(dt, 1.0 / 120.0, 1.0 / 12.0)
         requested = max(1, min(10, lava_config.blobs))
@@ -679,13 +902,18 @@ class AcousticOrganism:
         radius_min = clamp(lava_config.radius_min, 0.04, 0.3)
         radius_max = clamp(lava_config.radius_max, radius_min, 0.35)
         affect = affective or AffectiveState()
+        story = narrative or NarrativeState()
         self.phase += dt * (
             0.42
             + drift * 0.72
             + forces.voice * 0.16
             + forces.tempo * 0.34
             + forces.pulse * 0.18
+            + forces.rhythm_density * 0.20
             + affect.agitation * 0.10
+            + affect.snap * 0.18
+            + story.interruption * 0.10
+            + story.resolution * 0.04
         )
         self._advance_pressure_waves(dt, forces)
         center_x = 0.5 + math.sin(self.phase * 0.37) * 0.035
@@ -731,9 +959,13 @@ class AcousticOrganism:
         mean_vx = sum(body.vx for body in self.bodies[:active_count]) / active_count
         mean_vy = sum(body.vy for body in self.bodies[:active_count]) / active_count
         mass_x, mass_y = self.center_of_mass(active_count)
-        center_gain = 0.24 if self.composition.habitat == "micro" else 0.16
-        group_pull_x = (0.5 - mass_x) * center_gain
-        group_pull_y = (center_y - mass_y) * center_gain
+        if self.composition.habitat == "current":
+            group_pull_x = adaptive_centroid_axis(mass_x, 0.5, mean_vx, 0.18)
+            group_pull_y = adaptive_centroid_axis(mass_y, center_y, mean_vy, 0.16)
+        else:
+            center_gain = 0.24 if self.composition.habitat == "micro" else 0.16
+            group_pull_x = (0.5 - mass_x) * center_gain
+            group_pull_y = (center_y - mass_y) * center_gain
 
         for index, body in enumerate(self.bodies):
             active = index < self.composition.active_bodies
@@ -753,7 +985,11 @@ class AcousticOrganism:
             band_position = body.band / max(1, len(forces.bands) - 1)
             pitch_affinity = max(0.16, 1.0 - abs(band_position - forces.tone) * 1.7)
             pitch_drive = local_band * pitch_affinity
-            event = max(local_hit, forces.transient) if index == impact_target else 0.0
+            event = (
+                max(local_hit, forces.transient, forces.rhythm_impulse * 0.72)
+                if index == impact_target
+                else 0.0
+            )
             spike_event = local_deviation
             previous_afterglow = body.afterglow
             previous_spike = body.spike
@@ -800,16 +1036,22 @@ class AcousticOrganism:
             tempo_drive = forces.tempo * (0.28 + forces.energy * 0.72)
             tempo_phase = self.phase * (2.2 + forces.tempo * 3.8) + body.phase
             tempo_wave = math.sin(tempo_phase)
+            rhythm_drive = forces.rhythm_density * (0.32 + forces.energy * 0.68)
+            rhythm_phase = self.phase * (6.0 + forces.rhythm_density * 10.0) + body.phase * 1.7
+            rhythm_wave = math.sin(rhythm_phase)
             emotional_cohesion = (
                 affect.cohesion * 0.018
                 + affect.intimacy * 0.022
                 + affect.yearning * 0.008
             )
-            emotional_contraction = affect.tension * 0.014
+            emotional_contraction = affect.tension * 0.014 + story.expectation * 0.008
             emotional_release = (
                 affect.release * 0.045
                 + affect.catharsis * 0.065
                 + affect.openness * 0.010
+                + affect.snap * 0.080
+                + story.interruption * 0.050
+                + story.resolution * 0.035
             )
             center_pull_x = -dx * (
                 0.035 + forces.energy * 0.012 + emotional_cohesion + emotional_contraction
@@ -856,7 +1098,11 @@ class AcousticOrganism:
                 + drift * 0.035
                 + affect.agitation * 0.008
                 + affect.catharsis * 0.012
+                + affect.snap * 0.014
+                + story.interruption * 0.006
+                + story.resolution * 0.004
                 + tempo_drive * 0.010
+                + rhythm_drive * 0.009
             )
             body.vx += (
                 curl_x * acceleration * self.composition.horizontal_flow
@@ -870,6 +1116,7 @@ class AcousticOrganism:
                 * tempo_drive
                 * 0.030
                 * body.character.idle
+                + math.cos(rhythm_phase) * rhythm_drive * 0.022 * body.character.detail
                 + center_pull_x
                 + home_x
                 + separation_x[index]
@@ -892,6 +1139,7 @@ class AcousticOrganism:
                 * tempo_drive
                 * 0.030
                 * body.character.idle
+                + math.sin(rhythm_phase) * rhythm_drive * 0.022 * body.character.detail
                 + center_pull_y
                 + home_y
                 + separation_y[index]
@@ -908,7 +1156,14 @@ class AcousticOrganism:
             damping = math.exp(-drag * dt)
             body.vx *= damping
             body.vy *= damping
-            speed_limit = 0.035 + drift * 0.12 + forces.transient * 0.10 + forces.pulse * 0.035
+            speed_limit = (
+                0.035
+                + drift * 0.12
+                + forces.transient * 0.10
+                + forces.pulse * 0.035
+                + forces.rhythm_density * 0.022
+                + forces.rhythm_impulse * 0.024
+            )
             speed = math.hypot(body.vx, body.vy)
             if speed > speed_limit:
                 body.vx *= speed_limit / speed
@@ -929,6 +1184,9 @@ class AcousticOrganism:
                 - affect.tension * 0.025
                 + affect.release * 0.055
                 + affect.catharsis * 0.075
+                + affect.snap * 0.060
+                + story.interruption * 0.030
+                + story.resolution * 0.025
             )
             body.base_radius = lerp(body.base_radius, target_radius, dt * 1.6)
             body.radius = lerp(body.radius, body.base_radius, dt * 3.4)
@@ -984,6 +1242,9 @@ class AcousticOrganism:
             tempo_shape = tempo_wave * tempo_drive * 0.055 * body.character.deformation
             body.stretch_x += tempo_shape
             body.stretch_y -= tempo_shape * 0.58
+            rhythm_shape = rhythm_wave * rhythm_drive * 0.045 * body.character.deformation
+            body.stretch_x += rhythm_shape
+            body.stretch_y -= rhythm_shape * 0.72
             yearning_shape = (
                 affect.yearning
                 * max(body.character.voice, body.character.detail * 0.70)
