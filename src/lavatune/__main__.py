@@ -12,6 +12,7 @@ from .config import (
     PROFILE_NAMES,
     apply_cli_overrides,
     load_config,
+    preference_path,
 )
 from .doctor import format_report, inspect_environment
 from .text import sanitize_display_text
@@ -134,7 +135,13 @@ def main() -> int:
         return 0
 
     try:
-        config = load_config(args.config, args.theme, args.profile)
+        saved_preferences = preference_path()
+        config = load_config(
+            args.config,
+            args.theme,
+            args.profile,
+            saved_preferences=None if args.config else saved_preferences,
+        )
         if args.content_mode:
             config.content_mode = args.content_mode
         if args.analysis:
@@ -161,7 +168,11 @@ def main() -> int:
         print(format_report(report))
         return report.exit_code
 
-    app = LavaTuneApp(config, demo_mode=args.demo)
+    app = LavaTuneApp(
+        config,
+        demo_mode=args.demo,
+        saved_preferences=None if args.config else saved_preferences,
+    )
     try:
         app.run()
     except KeyboardInterrupt:

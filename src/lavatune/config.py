@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
@@ -12,8 +15,13 @@ import tomllib
 BACKEND_NAMES = ("auto", "pipewire", "pulse", "ffmpeg")
 PROFILE_NAMES = ("power-save", "atlas", "responsive")
 CONTENT_MODES = ("auto", "music", "speech", "book")
+MATERIAL_NAMES = ("text", "fluid")
+WEIGHT_NAMES = ("airy", "balanced", "full")
+EDGE_NAMES = ("soft", "defined")
+AFTERGLOW_NAMES = ("quiet", "present")
 DEFAULT_THEME = "soft-afterglow"
 THEME_ALIASES = {"warm-braille": DEFAULT_THEME}
+PREFERENCE_SCHEMA = 1
 
 
 @dataclass(slots=True)
@@ -30,6 +38,11 @@ class AudioConfig:
 class RenderConfig:
     glyphs: str = " .,:;~oO@"
     palette: list[str] | str | None = "soft-afterglow"
+    material: str = "text"
+    weight: str = "balanced"
+    edge: str = "soft"
+    afterglow: str = "present"
+    cell_aspect: float = 1.85
     show_stats: bool = False
     scale: int = 3
     color_steps: int = 4
@@ -96,6 +109,94 @@ def _merge_dataclass(instance: Any, overrides: dict[str, Any]) -> Any:
         else:
             data[key] = value
     return replace(instance, **data)
+
+
+def preference_path() -> Path:
+    root = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(root).expanduser() if root else Path.home() / ".config"
+    return base / "lavatune" / "preferences.json"
+
+
+def _preference_payload(config: AppConfig) -> dict[str, Any]:
+    return {
+        "schema": PREFERENCE_SCHEMA,
+        "fps": config.fps,
+        "profile": config.profile,
+        "content_mode": config.content_mode,
+        "audio": {
+            "backend": config.audio.backend,
+            "analysis": config.audio.analysis,
+            "sample_rate": config.audio.sample_rate,
+            "frame_size": config.audio.frame_size,
+        },
+        "render": {
+            "palette": config.render.palette,
+            "material": config.render.material,
+            "weight": config.render.weight,
+            "edge": config.render.edge,
+            "afterglow": config.render.afterglow,
+            "cell_aspect": config.render.cell_aspect,
+            "show_stats": config.render.show_stats,
+            "scale": config.render.scale,
+            "color_steps": config.render.color_steps,
+        },
+        "lava": {
+            "blobs": config.lava.blobs,
+            "drift": config.lava.drift,
+            "viscosity": config.lava.viscosity,
+            "reactivity": config.lava.reactivity,
+            "radius_min": config.lava.radius_min,
+            "radius_max": config.lava.radius_max,
+        },
+    }
+
+
+def save_preferences(config: AppConfig, path: Path | None = None) -> Path:
+    """Atomically save bounded user-facing settings, never an explicit config file."""
+
+    destination = path or preference_path()
+    destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".preferences-",
+        suffix=".json",
+        dir=destination.parent,
+        text=True,
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(_preference_payload(config), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
+
+
+def _apply_saved_preferences(config: AppConfig, path: Path) -> AppConfig:
+    if not path.exists():
+        return config
+    if path.stat().st_size > 65536:
+        raise ValueError(f"Preferences file is too large: {path}")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict) or raw.get("schema") != PREFERENCE_SCHEMA:
+        raise ValueError(f"Unsupported preferences schema in {path}")
+    overrides = {key: value for key, value in raw.items() if key != "schema"}
+    return _merge_dataclass(config, overrides)
+
+
+def _normalize_config(config: AppConfig) -> AppConfig:
+    render = config.render
+    render = replace(
+        render,
+        material=render.material if render.material in MATERIAL_NAMES else "text",
+        weight=render.weight if render.weight in WEIGHT_NAMES else "balanced",
+        edge=render.edge if render.edge in EDGE_NAMES else "soft",
+        afterglow=render.afterglow if render.afterglow in AFTERGLOW_NAMES else "present",
+        cell_aspect=max(1.0, min(3.0, float(render.cell_aspect))),
+    )
+    return replace(config, render=render)
 
 
 def apply_profile(config: AppConfig, profile_name: str | None) -> AppConfig:
@@ -216,11 +317,15 @@ def load_config(
     config_path: str | None,
     theme_name: str | None,
     profile_name: str | None = None,
+    saved_preferences: Path | None = None,
 ) -> AppConfig:
     theme_key = THEME_ALIASES.get(theme_name or DEFAULT_THEME, theme_name or DEFAULT_THEME)
     if theme_key not in BUILTIN_THEMES:
         raise ValueError(f"Unknown theme '{theme_key}'")
     config = BUILTIN_THEMES[theme_key]
+
+    if saved_preferences is not None:
+        config = _apply_saved_preferences(config, saved_preferences)
 
     if config_path:
         raw = tomllib.loads(Path(config_path).read_text())
@@ -228,4 +333,4 @@ def load_config(
             raise ValueError("Config root must be a table")
         config = _merge_dataclass(config, raw)
 
-    return apply_profile(config, profile_name or config.profile)
+    return _normalize_config(apply_profile(config, profile_name or config.profile))

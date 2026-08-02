@@ -19,6 +19,7 @@ Lavatune is designed to remain local and easy to audit:
 - no shell interpolation or dynamic plugin loading
 - no downloaded themes, models, or assets
 - structured TOML parsing with unknown-key rejection
+- bounded, versioned JSON preferences written atomically with user-only file permissions
 - fixed subprocess argument lists
 - bounded media fields and backend diagnostics
 
@@ -37,6 +38,7 @@ Lavatune processes data from several local trust boundaries:
 - player names, status, titles, artists, and URLs returned by MPRIS through `playerctl`
 - terminal keyboard, mouse, resize, and focus events
 - user-selected TOML configuration files
+- the same user's XDG Lavatune preference file
 
 Media fields are length-limited and stripped of terminal controls, bidirectional controls, and invisible formatting characters before display. This reduces terminal injection and visual-spoofing risk, but a compromised terminal emulator, audio server, or same-user desktop session remains outside Lavatune's protection boundary.
 

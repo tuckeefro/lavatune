@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import math
 import unittest
 
 from lavatune.app import (
     LavaField,
     PRODUCT_PRESETS,
+    UiState,
     _apply_product_preset,
     _interpolated_row_value,
+    _make_controls,
     _product_preset_name_for_config,
     _scene_name_for_config,
     _semantic_color_bucket,
@@ -14,19 +17,24 @@ from lavatune.app import (
 )
 from lavatune.audio import AudioFrame
 from lavatune.config import LavaConfig, apply_cli_overrides, load_config
+from lavatune.materials import MATERIAL_NAMES, MaterialStyle, material_for
 from lavatune.organism import (
+    CELL_ASPECT,
     AcousticOrganism,
     AudioForceMapper,
     AudioForces,
+    circulation_at,
     compose_tile,
     habitat_anchor,
     measure_field,
+    tile_axis_scales,
 )
 
 
 SILENCE = AudioFrame(0.0, [0.0] * 8, 0.0, 0.0, 0.0)
 SPEECH = AudioFrame(0.24, [0.12, 0.18, 0.42, 0.58, 0.38, 0.18, 0.09, 0.05], 0.07, 0.08, 0.0)
 BASS = AudioFrame(0.48, [0.92, 0.78, 0.35, 0.16, 0.09, 0.05, 0.03, 0.02], 0.18, 0.05, 0.0)
+MUSIC = AudioFrame(0.38, [0.55, 0.47, 0.33, 0.42, 0.38, 0.29, 0.22, 0.16], 0.26, 0.13, 0.0)
 TRANSIENT = AudioFrame(0.72, [0.82, 0.72, 0.64, 0.58, 0.70, 0.80, 0.94, 0.88], 0.92, 0.24, 0.0)
 
 
@@ -91,6 +99,47 @@ class AudioForceTests(unittest.TestCase):
 
 
 class CompositionTests(unittest.TestCase):
+    def test_sound_roles_disturb_their_authored_bodies_differently(self) -> None:
+        config = LavaConfig(blobs=4)
+        cases = {
+            "silence": AudioForces(),
+            "bass": AudioForces(
+                bass=0.8,
+                energy=0.6,
+                tone=0.12,
+                bands=(0.8, 0.7, 0.4, 0.1, 0.05, 0.02, 0.01, 0.0),
+            ),
+            "voice": AudioForces(
+                voice=0.8,
+                energy=0.5,
+                tone=0.48,
+                bands=(0.1, 0.2, 0.5, 0.8, 0.7, 0.3, 0.1, 0.05),
+            ),
+            "detail": AudioForces(
+                detail=0.8,
+                flux=0.3,
+                energy=0.4,
+                tone=0.82,
+                bands=(0.0, 0.02, 0.05, 0.1, 0.2, 0.5, 0.8, 0.9),
+            ),
+        }
+        results = {}
+        for name, forces in cases.items():
+            organism = AcousticOrganism(body_limit=4)
+            starts = [(body.x, body.y) for body in organism.bodies]
+            for _ in range(22):
+                organism.update(1.0 / 22.0, forces, 44, 18, config, "buoyant")
+            movement = [
+                math.hypot(body.x - start_x, body.y - start_y)
+                for body, (start_x, start_y) in zip(organism.bodies, starts)
+            ]
+            spread = [body.stretch_x + body.stretch_y for body in organism.bodies]
+            results[name] = (movement, spread)
+
+        self.assertGreater(results["bass"][0][0], results["silence"][0][0] * 2.0)
+        self.assertGreater(results["voice"][0][1], results["silence"][0][1] * 1.20)
+        self.assertEqual(results["detail"][1].index(max(results["detail"][1])), 2)
+
     def test_tile_composition_changes_topology_instead_of_only_scale(self) -> None:
         self.assertEqual(compose_tile(24, 10, 8).active_bodies, 1)
         self.assertEqual(compose_tile(30, 24, 8).active_bodies, 3)
@@ -112,6 +161,28 @@ class CompositionTests(unittest.TestCase):
         self.assertLess(current_homes[0][0], current_homes[1][0])
         self.assertLess(current_homes[1][0], current_homes[2][0])
 
+    def test_tile_currents_form_return_lanes_instead_of_waypoint_motion(self) -> None:
+        chimney = compose_tile(20, 32, 6)
+        current = compose_tile(90, 12, 6)
+
+        _, chimney_center = circulation_at(chimney, 0.5, 0.5, 0.0)
+        _, chimney_wall = circulation_at(chimney, 0.05, 0.5, 0.0)
+        current_center, _ = circulation_at(current, 0.5, 0.5, 0.0)
+        current_edge, _ = circulation_at(current, 0.5, 0.05, 0.0)
+
+        self.assertLess(chimney_center, 0.0)
+        self.assertGreater(chimney_wall, 0.0)
+        self.assertGreater(current_center, 0.0)
+        self.assertLess(current_edge, 0.0)
+
+    def test_body_scale_uses_physical_terminal_dimensions(self) -> None:
+        for width, height in ((20, 32), (44, 18), (90, 12)):
+            with self.subTest(width=width, height=height):
+                scale_x, scale_y = tile_axis_scales(width, height)
+                physical_x = scale_x * width
+                physical_y = scale_y * height * CELL_ASPECT
+                self.assertAlmostEqual(physical_x, physical_y)
+
     def test_resize_preserves_body_identity_position_and_momentum(self) -> None:
         field = LavaField()
         field.resize(44, 18)
@@ -126,6 +197,41 @@ class CompositionTests(unittest.TestCase):
         settle(field, SILENCE, "book", 1)
         self.assertEqual(field.composition.active_bodies, 1)
         self.assertEqual([item[0] for item in before], [id(body) for body in field.bodies])
+
+    def test_mass_weighted_group_recenters_without_collapsing_body_spacing(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        for body in organism.bodies[:4]:
+            body.x -= 0.24
+            body.presence = 1.0
+        before_x, before_y = organism.center_of_mass(4)
+        before_spacing = math.hypot(
+            organism.bodies[0].x - organism.bodies[1].x,
+            organism.bodies[0].y - organism.bodies[1].y,
+        )
+
+        for _ in range(90):
+            organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
+
+        after_x, after_y = organism.center_of_mass(4)
+        after_spacing = math.hypot(
+            organism.bodies[0].x - organism.bodies[1].x,
+            organism.bodies[0].y - organism.bodies[1].y,
+        )
+        self.assertLess(
+            math.hypot(after_x - 0.5, after_y - 0.52),
+            math.hypot(before_x - 0.5, before_y - 0.52),
+        )
+        self.assertGreater(after_spacing, before_spacing * 0.55)
+
+    def test_first_viewport_seeds_the_cast_in_its_actual_habitat(self) -> None:
+        field = LavaField()
+        field.resize(18, 8)
+
+        center_x, center_y = field.organism.center_of_mass(1)
+
+        self.assertAlmostEqual(center_x, 0.5, places=2)
+        self.assertAlmostEqual(center_y, 0.52, places=2)
 
     def test_first_four_bodies_keep_authored_identities_and_silhouettes(self) -> None:
         field = LavaField()
@@ -156,8 +262,106 @@ class CompositionTests(unittest.TestCase):
             organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
         self.assertLess(organism.bodies[2].afterglow, 0.05)
 
+    def test_transient_pressure_crosses_the_tile_and_recovers(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        strike = AudioForces(transient=0.9, pulse=0.9, flux=0.7, energy=0.8, tone=0.72)
+
+        organism.update(1.0 / 22.0, strike, 44, 18, config, "buoyant")
+        for _ in range(12):
+            organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
+
+        pressures = [body.acoustic_pressure for body in organism.bodies[:4]]
+        self.assertGreater(max(pressures), 0.10)
+        self.assertGreater(max(pressures) - min(pressures), 0.05)
+
+        for _ in range(60):
+            organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
+        self.assertLess(max(body.acoustic_pressure for body in organism.bodies[:4]), 0.05)
+        self.assertEqual(organism.pressure_waves, [])
+
+    def test_wall_contact_squashes_on_the_contact_axis(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        side = AcousticOrganism(body_limit=4)
+        side.bodies[0].x = 0.0
+        side.bodies[0].y = 0.5
+        side.bodies[0].vx = -0.2
+        side.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
+        self.assertGreater(side.bodies[0].wall_pressure_x, 0.0)
+        self.assertGreater(side.bodies[0].stretch_y, side.bodies[0].stretch_x)
+        self.assertGreater(side.bodies[0].vx, 0.0)
+        self.assertLess(side.bodies[0].vx, 0.03)
+
+        ceiling = AcousticOrganism(body_limit=4)
+        ceiling.bodies[0].x = 0.5
+        ceiling.bodies[0].y = 0.0
+        ceiling.bodies[0].vy = -0.2
+        ceiling.update(1.0 / 22.0, AudioForces(), 44, 18, config, "buoyant")
+        self.assertGreater(ceiling.bodies[0].wall_pressure_y, 0.0)
+        self.assertGreater(ceiling.bodies[0].stretch_x, ceiling.bodies[0].stretch_y)
+        self.assertGreater(ceiling.bodies[0].vy, 0.0)
+        self.assertLess(ceiling.bodies[0].vy, 0.03)
+
 
 class RenderingBudgetTests(unittest.TestCase):
+    def test_semantic_field_keeps_mass_surface_and_attention_separate(self) -> None:
+        field = LavaField()
+        field.resize(44, 18)
+        settle(field, TRANSIENT, "music", 16)
+
+        self.assertIsNot(field.field_frame.mass, field.field_frame.surface)
+        self.assertIs(field.attention_buffers, field.field_frame.attention)
+        self.assertTrue(any(value > 0.0 for row in field.field_frame.mass for value in row))
+        self.assertTrue(any(value > 0.0 for row in field.field_frame.surface for value in row))
+        self.assertTrue(any(value > 0.0 for row in field.field_frame.attention for value in row))
+
+    def test_review_sequence_stays_legible_in_every_tile_habitat(self) -> None:
+        shapes = ((18, 8), (20, 32), (44, 18), (90, 12))
+        fixtures = (
+            (SILENCE, "book"),
+            (SPEECH, "speech"),
+            (BASS, "music"),
+            (MUSIC, "music"),
+            (TRANSIENT, "music"),
+        )
+        config = LavaConfig(blobs=6)
+
+        for width, height in shapes:
+            for frame, mode in fixtures:
+                with self.subTest(width=width, height=height, mode=mode, rms=frame.rms):
+                    field = LavaField()
+                    field.resize(width, height)
+                    for _ in range(42):
+                        field._last_step_at = None
+                        field.step(frame, mode, "atlas", 1.0, config)
+                    metrics = measure_field(field.buffers)
+
+                    self.assertGreater(metrics.visible, 0.05)
+                    self.assertLess(metrics.visible, 0.48)
+                    self.assertGreaterEqual(metrics.regions, 1)
+                    self.assertLess(metrics.saturated, 0.02)
+
+                    for material_name in MATERIAL_NAMES:
+                        material = material_for(material_name)
+                        style = MaterialStyle()
+                        cells = [
+                            material.cell(
+                                field.field_frame,
+                                x,
+                                y,
+                                width,
+                                height,
+                                style,
+                                field.phase,
+                            )
+                            for y in range(height)
+                            for x in range(width)
+                        ]
+                        visible = sum(cell.glyph != " " for cell in cells) / len(cells)
+                        self.assertGreater(visible, 0.04)
+                        self.assertLess(visible, 0.52)
+
     def test_silence_keeps_readable_bodies_and_negative_space(self) -> None:
         field = LavaField()
         field.resize(44, 18)
@@ -209,6 +413,34 @@ class SelectedDirectionTests(unittest.TestCase):
                 config = load_config(None, None, "atlas")
                 _apply_product_preset(config, preset)
                 self.assertEqual(_scene_name_for_config(config), "soft-afterglow")
+
+    def test_operating_modes_preserve_selected_semantic_material(self) -> None:
+        for preset in PRODUCT_PRESETS:
+            with self.subTest(preset=preset):
+                config = load_config(None, None, "atlas")
+                config.render.material = "fluid"
+                config.render.weight = "airy"
+                config.render.edge = "defined"
+                config.render.afterglow = "quiet"
+
+                _apply_product_preset(config, preset)
+
+                self.assertEqual(config.render.material, "fluid")
+                self.assertEqual(config.render.weight, "airy")
+                self.assertEqual(config.render.edge, "defined")
+                self.assertEqual(config.render.afterglow, "quiet")
+
+    def test_material_control_does_not_request_an_organism_reset(self) -> None:
+        config = load_config(None, None, "atlas")
+        controls = _make_controls(config)
+        ui = UiState()
+        material = controls["Look"][0]
+
+        message = material.adjust(config, 1, ui)
+
+        self.assertEqual(message, "material: fluid")
+        self.assertEqual(config.render.material, "fluid")
+        self.assertFalse(ui.reset_lava)
 
     def test_compact_defaults_resolve_to_selected_direction(self) -> None:
         config = load_config(None, None, "atlas")

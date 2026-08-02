@@ -10,6 +10,9 @@ from .audio import AudioFrame
 from .config import LavaConfig
 
 
+CELL_ASPECT = 1.85
+
+
 def clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return low if value < low else high if value > high else value
 
@@ -252,6 +255,50 @@ def habitat_anchor(composition: TileComposition, index: int, phase: float) -> tu
     return x, y
 
 
+def tile_axis_scales(
+    width: int,
+    height: int,
+    cell_aspect: float = CELL_ASPECT,
+) -> tuple[float, float]:
+    """Convert one physical tile-relative distance into normalized x/y units."""
+
+    physical_width = float(max(10, width))
+    physical_height = float(max(6, height)) * clamp(cell_aspect, 1.0, 3.0)
+    reference = min(physical_width, physical_height)
+    return reference / physical_width, reference / physical_height
+
+
+def circulation_at(
+    composition: TileComposition,
+    x: float,
+    y: float,
+    phase: float,
+) -> tuple[float, float]:
+    """Return a continuous current shaped by the tile rather than by body index."""
+
+    dx = x - 0.5
+    dy = y - 0.5
+    if composition.habitat == "chimney":
+        # Warm material rises through the middle and returns along the walls.
+        return (
+            math.sin(y * math.tau + phase * 0.31) * 0.34,
+            -math.cos(dx * math.tau) * 0.92,
+        )
+    if composition.habitat == "current":
+        # Wide tiles carry a slow horizontal loop, including a quiet return lane.
+        return (
+            math.cos(dy * math.tau) * 0.94,
+            math.sin(x * math.tau + phase * 0.27) * 0.28,
+        )
+
+    distance = max(0.12, math.hypot(dx, dy))
+    orbit_x, orbit_y = -dy / distance, dx / distance
+    if composition.habitat == "micro":
+        return orbit_x * 0.72, orbit_y * 0.72
+    breathing = 0.82 + math.sin(phase * 0.23 + distance * 4.0) * 0.16
+    return orbit_x * breathing, orbit_y * breathing
+
+
 @dataclass(slots=True, frozen=True)
 class MotionProfile:
     name: str
@@ -311,8 +358,23 @@ class Body:
     stretch_x: float = 1.0
     stretch_y: float = 1.0
     wall_pressure: float = 0.0
+    wall_pressure_x: float = 0.0
+    wall_pressure_y: float = 0.0
+    acoustic_pressure: float = 0.0
+    pressure_angle: float = 0.0
     afterglow: float = 0.0
     impact_angle: float = 0.0
+
+
+@dataclass(slots=True)
+class PressureWave:
+    """A short acoustic disturbance traveling through the shared tile."""
+
+    x: float
+    y: float
+    age: float
+    strength: float
+    speed: float
 
 
 class AcousticOrganism:
@@ -321,14 +383,20 @@ class AcousticOrganism:
     def __init__(self, body_limit: int = 8, seed: int = 719) -> None:
         self._random = random.Random(seed)
         self.bodies: list[Body] = []
+        self.pressure_waves: list[PressureWave] = []
         self.phase = 0.0
+        self._last_event = 0.0
+        self._wave_cooldown = 0.0
         self.composition = compose_tile(40, 18, body_limit)
         self.ensure_capacity(body_limit)
 
     def reset(self, body_limit: int | None = None) -> None:
         limit = body_limit if body_limit is not None else max(1, len(self.bodies))
         self.bodies = []
+        self.pressure_waves = []
         self.phase = 0.0
+        self._last_event = 0.0
+        self._wave_cooldown = 0.0
         self.ensure_capacity(limit)
 
     def ensure_capacity(self, count: int) -> None:
@@ -354,6 +422,68 @@ class AcousticOrganism:
                 )
             )
 
+    def center_of_mass(self, count: int | None = None) -> tuple[float, float]:
+        """Return the visual centroid without exposing it as a body waypoint."""
+
+        selected = self.bodies[: count or self.composition.active_bodies]
+        if not selected:
+            return 0.5, 0.5
+        weights = [
+            body.character.mass * body.radius * body.radius * max(0.15, body.presence)
+            for body in selected
+        ]
+        total = sum(weights)
+        return (
+            sum(body.x * weight for body, weight in zip(selected, weights)) / total,
+            sum(body.y * weight for body, weight in zip(selected, weights)) / total,
+        )
+
+    def seed_for_tile(self, width: int, height: int, requested: int) -> None:
+        """Place a never-rendered cast in its first habitat without affecting resizes."""
+
+        if self.phase != 0.0 or any(body.presence > 0.0 for body in self.bodies):
+            return
+        self.composition = compose_tile(width, height, requested)
+        for index, body in enumerate(self.bodies):
+            body.x, body.y = habitat_anchor(self.composition, index, 0.0)
+        center_x, center_y = self.center_of_mass(self.composition.active_bodies)
+        shift_x = 0.5 - center_x
+        shift_y = 0.52 - center_y
+        for body in self.bodies[: self.composition.active_bodies]:
+            body.x = clamp(body.x + shift_x, 0.06, 0.94)
+            body.y = clamp(body.y + shift_y, 0.06, 0.94)
+
+    def _advance_pressure_waves(self, dt: float, forces: AudioForces) -> None:
+        """Emit on rising events, then let pressure cross the vessel over time."""
+
+        self._wave_cooldown = max(0.0, self._wave_cooldown - dt)
+        event = max(forces.transient * 0.92, forces.pulse * 0.78, forces.flux * 0.46)
+        rising = event > max(0.18, self._last_event + 0.055)
+        if rising and self._wave_cooldown <= 0.0:
+            # Pitch chooses an edge, while phase prevents repeated beats from
+            # entering at exactly the same point.
+            angle = math.pi * (0.65 + forces.tone * 1.15) + math.sin(self.phase) * 0.08
+            self.pressure_waves.append(
+                PressureWave(
+                    x=clamp(0.5 + math.cos(angle) * 0.54, 0.02, 0.98),
+                    y=clamp(0.5 + math.sin(angle) * 0.54, 0.02, 0.98),
+                    age=0.0,
+                    strength=clamp(event),
+                    speed=0.72 + forces.tempo * 0.36 + forces.energy * 0.12,
+                )
+            )
+            self.pressure_waves = self.pressure_waves[-3:]
+            self._wave_cooldown = 0.10
+        self._last_event = event
+
+        alive: list[PressureWave] = []
+        for wave in self.pressure_waves:
+            wave.age += dt
+            wave.strength *= math.exp(-0.72 * dt)
+            if wave.age < 2.2 and wave.strength > 0.025:
+                alive.append(wave)
+        self.pressure_waves = alive
+
     def update(
         self,
         dt: float,
@@ -362,6 +492,7 @@ class AcousticOrganism:
         height: int,
         lava_config: LavaConfig,
         motion_name: str = "neutral",
+        cell_aspect: float = CELL_ASPECT,
     ) -> TileComposition:
         dt = clamp(dt, 1.0 / 120.0, 1.0 / 12.0)
         requested = max(1, min(10, lava_config.blobs))
@@ -379,8 +510,10 @@ class AcousticOrganism:
             + forces.tempo * 0.34
             + forces.pulse * 0.18
         )
+        self._advance_pressure_waves(dt, forces)
         center_x = 0.5 + math.sin(self.phase * 0.37) * 0.035
         center_y = 0.53 + math.cos(self.phase * 0.29) * 0.028
+        axis_x, axis_y = tile_axis_scales(width, height, cell_aspect)
 
         # Resolve overlap as acceleration rather than teleporting bodies. This
         # keeps identity and momentum intact through resize recomposition.
@@ -395,8 +528,8 @@ class AcousticOrganism:
             for right in range(left + 1, active_count):
                 first = self.bodies[left]
                 second = self.bodies[right]
-                dx = second.x - first.x
-                dy = second.y - first.y
+                dx = (second.x - first.x) / axis_x
+                dy = (second.y - first.y) / axis_y
                 distance = math.hypot(dx, dy)
                 preferred = (first.radius + second.radius) * 1.04
                 if distance >= preferred:
@@ -407,10 +540,17 @@ class AcousticOrganism:
                 else:
                     nx, ny = dx / distance, dy / distance
                 pressure = (preferred - distance) * 0.86
-                separation_x[left] -= nx * pressure
-                separation_y[left] -= ny * pressure
-                separation_x[right] += nx * pressure
-                separation_y[right] += ny * pressure
+                separation_x[left] -= nx * pressure * axis_x
+                separation_y[left] -= ny * pressure * axis_y
+                separation_x[right] += nx * pressure * axis_x
+                separation_y[right] += ny * pressure * axis_y
+
+        mean_vx = sum(body.vx for body in self.bodies[:active_count]) / active_count
+        mean_vy = sum(body.vy for body in self.bodies[:active_count]) / active_count
+        mass_x, mass_y = self.center_of_mass(active_count)
+        center_gain = 0.24 if self.composition.habitat == "micro" else 0.16
+        group_pull_x = (0.5 - mass_x) * center_gain
+        group_pull_y = (0.52 - mass_y) * center_gain
 
         for index, body in enumerate(self.bodies):
             active = index < self.composition.active_bodies
@@ -431,8 +571,18 @@ class AcousticOrganism:
             if event > previous_afterglow + 0.08:
                 body.impact_angle = body.phase * 1.9 + self.phase * 1.3
             angle = self.phase * (0.62 + index * 0.035) + body.phase
-            curl_x = math.cos(angle * 0.83) * motion.idle_flow * body.character.idle
-            curl_y = math.sin(angle * 0.71) * motion.idle_flow * body.character.idle
+            current_x, current_y = circulation_at(
+                self.composition,
+                body.x,
+                body.y,
+                self.phase + body.phase * 0.16,
+            )
+            curl_x = (
+                current_x * 0.78 + math.cos(angle * 0.83) * 0.22
+            ) * motion.idle_flow * body.character.idle
+            curl_y = (
+                current_y * 0.78 + math.sin(angle * 0.71) * 0.22
+            ) * motion.idle_flow * body.character.idle
 
             dx = body.x - center_x
             dy = body.y - center_y
@@ -452,7 +602,7 @@ class AcousticOrganism:
             center_pull_x = -dx * (0.035 + forces.energy * 0.012)
             center_pull_y = -dy * (0.050 + forces.energy * 0.012)
             anchor_x, anchor_y = habitat_anchor(self.composition, index, self.phase)
-            habitat_pull = 0.130 if self.composition.habitat != "micro" else 0.180
+            habitat_pull = 0.052 if self.composition.habitat != "micro" else 0.090
             home_x = (anchor_x - body.x) * habitat_pull
             home_y = (anchor_y - body.y) * habitat_pull
             thermal_flow = (
@@ -464,28 +614,55 @@ class AcousticOrganism:
             )
             body_scale = 1.0 / body.character.mass
 
+            wave_x = 0.0
+            wave_y = 0.0
+            wave_level = 0.0
+            for wave in self.pressure_waves:
+                wave_dx = (body.x - wave.x) / axis_x
+                wave_dy = (body.y - wave.y) / axis_y
+                wave_distance = max(0.001, math.hypot(wave_dx, wave_dy))
+                wave_radius = 0.055 + wave.age * wave.speed
+                thickness = 0.105 + wave.age * 0.035
+                envelope = math.exp(-((wave_distance - wave_radius) / thickness) ** 2)
+                local_pressure = wave.strength * envelope
+                wave_x += wave_dx / wave_distance * local_pressure * axis_x
+                wave_y += wave_dy / wave_distance * local_pressure * axis_y
+                wave_level += local_pressure
+            body.acoustic_pressure = max(
+                body.acoustic_pressure * math.exp(-2.6 * dt),
+                clamp(wave_level),
+            )
+            if abs(wave_x) + abs(wave_y) > 0.0001:
+                body.pressure_angle = math.atan2(wave_y / axis_y, wave_x / axis_x)
+
             acceleration = 0.018 + drift * 0.035
             body.vx += (
                 curl_x * acceleration * self.composition.horizontal_flow
                 + outward_x * bass_push * 0.110 * body_scale
-                + voice_swirl_x * 0.100
+                + voice_swirl_x * 0.125
                 + hit_direction * (event + forces.pulse * 0.12) * 0.140 * body_scale
                 + math.cos(pitch_direction) * pitch_drive * 0.082 * body.character.detail
                 + center_pull_x
                 + home_x
                 + separation_x[index]
+                + (mean_vx - body.vx) * 0.042
+                + group_pull_x
+                + wave_x * motion.audio_push * 0.135 * body_scale
             ) * dt
             body.vy += (
                 curl_y * acceleration * self.composition.vertical_flow
                 + thermal_flow
                 + outward_y * bass_push * 0.065 * body_scale
                 + forces.bass * body.character.bass * 0.028
-                + voice_swirl_y * 0.100
+                + voice_swirl_y * 0.125
                 + math.cos(body.phase * 1.37 + self.phase) * event * 0.140 * body_scale
                 + math.sin(pitch_direction) * pitch_drive * 0.082 * body.character.detail
                 + center_pull_y
                 + home_y
                 + separation_y[index]
+                + (mean_vy - body.vy) * 0.042
+                + group_pull_y
+                + wave_y * motion.audio_push * 0.135 * body_scale
             ) * dt
 
             drag = 0.28 + (1.0 - viscosity) * 3.2 + (1.0 - motion.inertia) * 2.0
@@ -511,32 +688,46 @@ class AcousticOrganism:
             body.base_radius = lerp(body.base_radius, target_radius, dt * 1.6)
             body.radius = lerp(body.radius, body.base_radius, dt * 3.4)
 
-            # Walls rebound velocity and leave a decaying pressure value. The
-            # renderer turns that pressure into a brief squash, not a flash.
-            margin = self.composition.wall_padding + body.radius * 0.42
-            wall_pressure = 0.0
-            if body.x < margin:
-                wall_pressure = max(wall_pressure, clamp((margin - body.x) / max(0.02, margin)))
-                body.x = margin
-                body.vx = abs(body.vx) * (0.52 + motion.collision * 0.30)
-            elif body.x > 1.0 - margin:
-                wall_pressure = max(wall_pressure, clamp((body.x - (1.0 - margin)) / max(0.02, margin)))
-                body.x = 1.0 - margin
-                body.vx = -abs(body.vx) * (0.52 + motion.collision * 0.30)
-            if body.y < margin:
-                wall_pressure = max(wall_pressure, clamp((margin - body.y) / max(0.02, margin)))
-                body.y = margin
-                body.vy = abs(body.vy) * (0.48 + motion.collision * 0.28)
-            elif body.y > 1.0 - margin:
-                wall_pressure = max(wall_pressure, clamp((body.y - (1.0 - margin)) / max(0.02, margin)))
-                body.y = 1.0 - margin
-                body.vy = -abs(body.vy) * (0.48 + motion.collision * 0.28)
+            # Wall margins use physical tile geometry, so contact feels alike
+            # in a wide current and a narrow chimney.
+            margin_x = axis_x * (self.composition.wall_padding + body.radius * 0.62)
+            margin_y = axis_y * (self.composition.wall_padding + body.radius * 0.62)
+            wall_pressure_x = 0.0
+            wall_pressure_y = 0.0
+            if body.x < margin_x:
+                wall_pressure_x = clamp((margin_x - body.x) / max(0.02, margin_x))
+                body.x = margin_x
+                body.vx = abs(body.vx) * (0.16 + motion.collision * 0.18)
+            elif body.x > 1.0 - margin_x:
+                wall_pressure_x = clamp(
+                    (body.x - (1.0 - margin_x)) / max(0.02, margin_x)
+                )
+                body.x = 1.0 - margin_x
+                body.vx = -abs(body.vx) * (0.16 + motion.collision * 0.18)
+            if body.y < margin_y:
+                wall_pressure_y = clamp((margin_y - body.y) / max(0.02, margin_y))
+                body.y = margin_y
+                body.vy = abs(body.vy) * (0.14 + motion.collision * 0.16)
+            elif body.y > 1.0 - margin_y:
+                wall_pressure_y = clamp(
+                    (body.y - (1.0 - margin_y)) / max(0.02, margin_y)
+                )
+                body.y = 1.0 - margin_y
+                body.vy = -abs(body.vy) * (0.14 + motion.collision * 0.16)
 
-            body.wall_pressure = max(body.wall_pressure * math.exp(-4.0 * dt), wall_pressure)
+            body.wall_pressure_x = max(
+                body.wall_pressure_x * math.exp(-4.0 * dt), wall_pressure_x
+            )
+            body.wall_pressure_y = max(
+                body.wall_pressure_y * math.exp(-4.0 * dt), wall_pressure_y
+            )
+            body.wall_pressure = max(body.wall_pressure_x, body.wall_pressure_y)
             velocity_angle = math.atan2(body.vy, body.vx)
             speed_stretch = clamp(math.hypot(body.vx, body.vy) / max(0.03, speed_limit))
-            body.stretch_x = 1.0 + abs(math.cos(velocity_angle)) * speed_stretch * 0.20
-            body.stretch_y = 1.0 + abs(math.sin(velocity_angle)) * speed_stretch * 0.20
+            travel_x = math.cos(velocity_angle) ** 2
+            travel_y = math.sin(velocity_angle) ** 2
+            body.stretch_x = 1.0 + travel_x * speed_stretch * 0.20 - travel_y * speed_stretch * 0.07
+            body.stretch_y = 1.0 + travel_y * speed_stretch * 0.20 - travel_x * speed_stretch * 0.07
             tonal_shape = (
                 forces.detail * body.character.detail * (0.035 + forces.tone * 0.105)
                 + forces.flux * 0.11
@@ -544,11 +735,63 @@ class AcousticOrganism:
             ) * body.character.deformation
             body.stretch_x += tonal_shape * (0.55 + 0.45 * abs(math.cos(pitch_direction)))
             body.stretch_y += tonal_shape * (0.55 + 0.45 * abs(math.sin(pitch_direction)))
-            if body.wall_pressure > 0.0:
-                body.stretch_x += body.wall_pressure * 0.26
-                body.stretch_y = max(0.72, body.stretch_y - body.wall_pressure * 0.18)
+            pressure_x = math.cos(body.pressure_angle) ** 2 * body.acoustic_pressure
+            pressure_y = math.sin(body.pressure_angle) ** 2 * body.acoustic_pressure
+            body.stretch_x += pressure_y * 0.13 - pressure_x * 0.08
+            body.stretch_y += pressure_x * 0.13 - pressure_y * 0.08
+            body.stretch_x += body.wall_pressure_y * 0.24 - body.wall_pressure_x * 0.17
+            body.stretch_y += body.wall_pressure_x * 0.24 - body.wall_pressure_y * 0.17
+            body.stretch_x = max(0.72, body.stretch_x)
+            body.stretch_y = max(0.72, body.stretch_y)
 
         return self.composition
+
+
+@dataclass(slots=True)
+class FieldFrame:
+    """Semantic field channels shared by every terminal output material."""
+
+    mass: list[list[float]]
+    surface: list[list[float]]
+    attention: list[list[float]]
+
+    @classmethod
+    def empty(cls, width: int, height: int) -> "FieldFrame":
+        return cls(
+            mass=[[0.0] * width for _ in range(height)],
+            surface=[[0.0] * width for _ in range(height)],
+            attention=[[0.0] * width for _ in range(height)],
+        )
+
+    def composite(
+        self,
+        mass_gain: float = 1.0,
+        surface_gain: float = 0.17,
+        attention_gain: float = 0.34,
+    ) -> list[list[float]]:
+        """Build the original balanced view for metrics and compatibility."""
+
+        rows: list[list[float]] = []
+        for mass_row, surface_row, attention_row in zip(
+            self.mass,
+            self.surface,
+            self.attention,
+        ):
+            rows.append(
+                [
+                    clamp(
+                        mass * mass_gain
+                        + surface * surface_gain
+                        + min(attention_gain, attention * attention_gain)
+                    )
+                    for mass, surface, attention in zip(
+                        mass_row,
+                        surface_row,
+                        attention_row,
+                    )
+                ]
+            )
+        return rows
 
 
 class OrganismFieldRenderer:
@@ -562,15 +805,18 @@ class OrganismFieldRenderer:
         height: int,
         phase: float,
         motion_name: str = "neutral",
-    ) -> tuple[list[list[float]], list[list[float]]]:
+        cell_aspect: float = CELL_ASPECT,
+    ) -> FieldFrame:
         width = max(10, width)
         height = max(6, height)
         motion = MOTION_PROFILES.get(motion_name, MOTION_PROFILES["neutral"])
         # The buffer stores shape intensity, not terminal color. The curses
         # layer applies glyphs and palettes later, which keeps brightness from
         # becoming a second equalizer.
-        rows = [[0.0] * width for _ in range(height)]
+        mass_rows = [[0.0] * width for _ in range(height)]
+        surface_rows = [[0.0] * width for _ in range(height)]
         attention_rows = [[0.0] * width for _ in range(height)]
+        axis_x, axis_y = tile_axis_scales(width, height, cell_aspect)
 
         for y in range(height):
             ny = y / max(1, height - 1)
@@ -583,13 +829,17 @@ class OrganismFieldRenderer:
                     if body.presence < 0.01:
                         continue
                     radius = max(0.035, body.radius)
+                    radius_x = radius * axis_x
+                    radius_y = radius * axis_y
                     band_position = body.band / max(1, len(forces.bands) - 1)
                     pitch_affinity = max(0.16, 1.0 - abs(band_position - forces.tone) * 1.7)
-                    dx = (nx - body.x) / (radius * body.stretch_x)
-                    dy = (ny - body.y) / (radius * body.stretch_y)
+                    dx = (nx - body.x) / (radius_x * body.stretch_x)
+                    dy = (ny - body.y) / (radius_y * body.stretch_y)
                     dist2 = dx * dx + dy * dy
                     influence = body.presence / ((1.0 + dist2) ** 2.65)
-                    mass += influence
+                    # A soft union lets touching bodies merge at their skirts
+                    # without turning several bodies into one saturated slab.
+                    mass = max(mass, influence) + min(mass, influence) * 0.22
 
                     surface = max(0.0, 1.0 - abs(math.sqrt(dist2) - 0.92) * 3.6)
                     texture = 0.5 + 0.5 * math.sin(
@@ -613,10 +863,10 @@ class OrganismFieldRenderer:
                     local_detail += influence * ripple * forces.pulse * (0.35 + pitch_affinity * 0.65)
 
                     hit = forces.hits[body.band % len(forces.hits)] if forces.hits else 0.0
-                    impact_x = body.x + math.cos(body.impact_angle) * radius * 0.72
-                    impact_y = body.y + math.sin(body.impact_angle) * radius * 0.72
-                    impact_dx = (nx - impact_x) / max(0.025, radius * 0.42)
-                    impact_dy = (ny - impact_y) / max(0.025, radius * 0.42)
+                    impact_x = body.x + math.cos(body.impact_angle) * radius_x * 0.72
+                    impact_y = body.y + math.sin(body.impact_angle) * radius_y * 0.72
+                    impact_dx = (nx - impact_x) / max(0.012, radius_x * 0.42)
+                    impact_dy = (ny - impact_y) / max(0.012, radius_y * 0.42)
                     local_attention += (
                         max(body.afterglow, hit)
                         * math.exp(-(impact_dx * impact_dx + impact_dy * impact_dy) * 1.8)
@@ -625,12 +875,10 @@ class OrganismFieldRenderer:
                 density = clamp((mass - 0.090) / 0.68)
                 if density <= 0.0:
                     continue
-                body_tone = density ** 0.82 * 0.72
-                surface_tone = local_detail * motion.surface_motion * 0.17
-                attention = min(0.34, local_attention * 0.34)
-                rows[y][x] = clamp(body_tone + surface_tone + attention, 0.0, 1.0)
+                mass_rows[y][x] = density ** 0.82 * 0.72
+                surface_rows[y][x] = clamp(local_detail * motion.surface_motion)
                 attention_rows[y][x] = clamp(local_attention)
-        return rows, attention_rows
+        return FieldFrame(mass_rows, surface_rows, attention_rows)
 
 
 @dataclass(slots=True, frozen=True)

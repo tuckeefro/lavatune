@@ -20,6 +20,7 @@ The current implementation targets Linux. A lightweight native macOS sibling is 
 - diagnoses platform, terminal, backend, metadata, and live PCM readiness
 - distinguishes bass, voice, detail, cadence, and transients
 - recomposes the same body identities into micro, chimney, basin, and current habitats
+- offers Text and foreground-only Fluid output materials without changing organism physics
 - displays optional local MPRIS media metadata
 - includes canonical listening, music, speech, and low-power operating modes
 - supports keyboard and mouse controls through Python `curses`
@@ -89,10 +90,12 @@ The organism starts without configuration on screen. Press `Tab` to bring the co
 The three dock tabs are:
 
 - `Modes`: operating mode, reactivity, and source type
-- `Look`: palette, glyphs, density, detail, and diagnostics
-- `System`: power profile, frame size, FPS, analysis, and backend
+- `Look`: material, visual weight, edge definition, afterglow, and palette
+- `System`: power profile, frame size, FPS, analysis, backend, and diagnostics
 
 Reactivity personalities are `whisper`, `conversational`, and `electric`. The default uses buoyant motion, `soft-afterglow`, and conversational reactivity.
+
+`Text` uses a validated one-column glyph ramp. `Fluid` follows the local mass-field gradient inside each foreground-only terminal cell, using quarter cells to describe a continuous curved edge and solid blocks for the connected body core. It preserves the terminal's real background and falls back to Text when UTF-8 output is unavailable. Look controls affect presentation only; switching them does not reset bodies, audio calibration, momentum, or pressure memory.
 
 ## Audio behavior
 
@@ -129,6 +132,8 @@ The compact tile integration accepts these environment variables:
 - `LAVATUNE_TARGET_CELLS`
 
 Older `CODEXDECK_LAVATUNE_*` names remain compatibility aliases during alpha.
+
+Dock changes are saved atomically to `$XDG_CONFIG_HOME/lavatune/preferences.json`, or `~/.config/lavatune/preferences.json` when `XDG_CONFIG_HOME` is unset. An explicit `--config` launch ignores saved preferences and never writes them. Older theme, scene, palette, and glyph settings remain accepted even though the daily dock exposes only the smaller semantic control set.
 
 Common backend and source failures are covered in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md). The deterministic field benchmark and its measurement boundaries are documented in [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
