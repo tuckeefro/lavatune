@@ -53,6 +53,12 @@ Restrained passages establish a separate readiness for contrast. Readiness fills
 
 These values describe posture rather than claiming to recognize sadness, joy, anger, or any other named emotion. Tension and intimacy contract the group, weight lowers its center, agitation roughens circulation and edges, and openness or release expands the cast. Brightness remains on a separate attention budget, so an emotionally intense passage can change stance and motion without washing out the tile.
 
+## Narrative Context
+
+Predictable timing and stable posture build expectation. A strong gesture becomes interruption in proportion to the expectation it violates, so the same transient can carry more consequence after an established pattern than in isolation. Tension followed by release becomes resolution. Expectation gently contracts the cast; interruption and resolution reuse bounded opening, acceleration, and breathing rather than triggering scripted scenes.
+
+These relationships are authored subtext, not detected meaning. Lavatune never claims to know the artist's intent or the listener's emotion. The narrative layer describes why its own organism responds differently to acoustically similar events in different temporal contexts.
+
 The intended arc is legible but restrained: pressure gathers, bodies draw closer and hold more memory, a change in the source registers promptly, and release opens the composition. The posture should remain believable across speech and noisy guitars without pretending that either has one deterministic meaning.
 
 ## Midwest Emo Grammar
@@ -90,6 +96,8 @@ A pass succeeds when:
 - steady compressed audio does not create rapid motion without repeated attacks
 - established restraint produces the same bounded snap after 10 seconds or 130 seconds
 - a lone notification remains local and a gradual crescendo opens without a false snap
+- predictable motion establishes expectation and the same surprise has more consequence in context
+- resolution requires prior tension and release rather than loudness alone
 - ordinary body intensity never receives the attention color
 - the closed control dock consumes no tile area
 - silence settles to the lowest cadence and ordinary music does not require transient cadence

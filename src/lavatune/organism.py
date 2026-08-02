@@ -70,6 +70,15 @@ class AffectiveState:
     snap: float = 0.0
 
 
+@dataclass(slots=True, frozen=True)
+class NarrativeState:
+    """Authored temporal meaning without named-emotion classification."""
+
+    expectation: float = 0.0
+    interruption: float = 0.0
+    resolution: float = 0.0
+
+
 class AffectiveTracker:
     """Accumulate gesture, phrase, and atmosphere cues with constant work."""
 
@@ -240,6 +249,69 @@ class AffectiveTracker:
             catharsis=catharsis,
             restraint=restraint,
             snap=snap,
+        )
+        return self.state
+
+
+class NarrativeTracker:
+    """Interpret current gestures through recent predictability and posture."""
+
+    def __init__(self) -> None:
+        self.state = NarrativeState()
+        self._last_at = 0.0
+
+    def reset(self) -> None:
+        self.__init__()
+
+    def update(
+        self,
+        forces: AudioForces,
+        affect: AffectiveState,
+        timestamp: float,
+    ) -> NarrativeState:
+        dt = 1.0 / 16.0
+        if timestamp > 0.0 and self._last_at > 0.0 and timestamp > self._last_at:
+            dt = clamp(timestamp - self._last_at, 1.0 / 120.0, 0.35)
+        if timestamp > 0.0:
+            self._last_at = timestamp
+
+        signal_level = forces.level if forces.level >= 0.0 else forces.energy
+        predictability = clamp(
+            forces.tempo * 0.35
+            + (1.0 - forces.flux) * 0.25
+            + (1.0 - affect.volatility) * 0.40
+        )
+        activity_gate = clamp((signal_level - 0.03) / 0.20)
+        predictability *= activity_gate
+        expectation = lerp(
+            self.state.expectation,
+            predictability,
+            time_amount(0.06, dt),
+        )
+        surprise = clamp(
+            forces.transient * 0.50
+            + forces.flux * 0.55
+            + max(forces.deviations, default=0.0) * 0.35
+            + affect.snap * 0.65
+        )
+        interruption_target = clamp(self.state.expectation * surprise)
+        interruption = max(
+            self.state.interruption * math.exp(-dt / 0.45),
+            interruption_target,
+        )
+        resolution_target = clamp(
+            affect.tension * (affect.release * 0.70 + affect.catharsis * 0.45)
+        )
+        resolution = max(
+            self.state.resolution * math.exp(-dt / 1.20),
+            resolution_target,
+        )
+        expectation *= 1.0 - interruption * 0.35
+
+        self.state = NarrativeState(
+            expectation=expectation,
+            interruption=interruption,
+            resolution=resolution,
         )
         return self.state
 
@@ -792,6 +864,7 @@ class AcousticOrganism:
         motion_name: str = "neutral",
         cell_aspect: float = CELL_ASPECT,
         affective: AffectiveState | None = None,
+        narrative: NarrativeState | None = None,
     ) -> TileComposition:
         dt = clamp(dt, 1.0 / 120.0, 1.0 / 12.0)
         requested = max(1, min(10, lava_config.blobs))
@@ -803,6 +876,7 @@ class AcousticOrganism:
         radius_min = clamp(lava_config.radius_min, 0.04, 0.3)
         radius_max = clamp(lava_config.radius_max, radius_min, 0.35)
         affect = affective or AffectiveState()
+        story = narrative or NarrativeState()
         self.phase += dt * (
             0.42
             + drift * 0.72
@@ -812,6 +886,8 @@ class AcousticOrganism:
             + forces.rhythm_density * 0.20
             + affect.agitation * 0.10
             + affect.snap * 0.18
+            + story.interruption * 0.10
+            + story.resolution * 0.04
         )
         self._advance_pressure_waves(dt, forces)
         center_x = 0.5 + math.sin(self.phase * 0.37) * 0.035
@@ -938,12 +1014,14 @@ class AcousticOrganism:
                 + affect.intimacy * 0.022
                 + affect.yearning * 0.008
             )
-            emotional_contraction = affect.tension * 0.014
+            emotional_contraction = affect.tension * 0.014 + story.expectation * 0.008
             emotional_release = (
                 affect.release * 0.045
                 + affect.catharsis * 0.065
                 + affect.openness * 0.010
                 + affect.snap * 0.080
+                + story.interruption * 0.050
+                + story.resolution * 0.035
             )
             center_pull_x = -dx * (
                 0.035 + forces.energy * 0.012 + emotional_cohesion + emotional_contraction
@@ -991,6 +1069,8 @@ class AcousticOrganism:
                 + affect.agitation * 0.008
                 + affect.catharsis * 0.012
                 + affect.snap * 0.014
+                + story.interruption * 0.006
+                + story.resolution * 0.004
                 + tempo_drive * 0.010
                 + rhythm_drive * 0.009
             )
@@ -1075,6 +1155,8 @@ class AcousticOrganism:
                 + affect.release * 0.055
                 + affect.catharsis * 0.075
                 + affect.snap * 0.060
+                + story.interruption * 0.030
+                + story.resolution * 0.025
             )
             body.base_radius = lerp(body.base_radius, target_radius, dt * 1.6)
             body.radius = lerp(body.radius, body.base_radius, dt * 3.4)

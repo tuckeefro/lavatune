@@ -26,6 +26,8 @@ from lavatune.organism import (
     AffectiveTracker,
     AudioForceMapper,
     AudioForces,
+    NarrativeState,
+    NarrativeTracker,
     circulation_at,
     compose_tile,
     habitat_anchor,
@@ -496,6 +498,81 @@ class AudioForceTests(unittest.TestCase):
         self.assertEqual(mapped.rhythm_impulse, 0.0)
 
 
+class NarrativeTests(unittest.TestCase):
+    def test_predictable_motion_builds_expectation(self) -> None:
+        tracker = NarrativeTracker()
+        predictable = AudioForces(tempo=0.68, energy=0.46, flux=0.03)
+        stable = AffectiveState(volatility=0.08)
+
+        for index in range(60):
+            state = tracker.update(predictable, stable, 1.0 + index * 0.10)
+
+        self.assertGreater(state.expectation, 0.65)
+        self.assertLess(state.interruption, 0.05)
+
+    def test_expectation_gives_the_same_surprise_more_context(self) -> None:
+        predictable = AudioForces(tempo=0.68, energy=0.46, flux=0.03)
+        stable = AffectiveState(volatility=0.08)
+        surprise = AudioForces(
+            transient=0.90,
+            energy=0.84,
+            flux=0.82,
+            deviations=(0.78,) * 8,
+        )
+
+        primed = NarrativeTracker()
+        for index in range(60):
+            primed.update(predictable, stable, 1.0 + index * 0.10)
+        contextual = primed.update(surprise, AffectiveState(volatility=0.82), 7.0)
+
+        fresh = NarrativeTracker()
+        isolated = fresh.update(surprise, AffectiveState(volatility=0.82), 7.0)
+
+        self.assertGreater(contextual.interruption, 0.55)
+        self.assertGreater(contextual.interruption, isolated.interruption * 8.0)
+
+    def test_resolution_requires_prior_tension_and_release(self) -> None:
+        forces = AudioForces(energy=0.24, flux=0.02)
+        tracker = NarrativeTracker()
+
+        resolved = tracker.update(
+            forces,
+            AffectiveState(tension=0.82, release=0.78, catharsis=0.62),
+            1.0,
+        )
+        unearned = NarrativeTracker().update(
+            forces,
+            AffectiveState(tension=0.04, release=0.78, catharsis=0.62),
+            1.0,
+        )
+
+        self.assertGreater(resolved.resolution, 0.55)
+        self.assertLess(unearned.resolution, 0.05)
+
+    def test_silence_does_not_prime_a_notification_as_narrative_interruption(self) -> None:
+        tracker = NarrativeTracker()
+        for index in range(100):
+            quiet = tracker.update(
+                AudioForces(level=0.0),
+                AffectiveState(),
+                1.0 + index * 0.10,
+            )
+
+        notification = tracker.update(
+            AudioForces(
+                level=0.92,
+                transient=0.96,
+                flux=0.82,
+                deviations=(0.84,) * 8,
+            ),
+            AffectiveState(volatility=0.90),
+            11.0,
+        )
+
+        self.assertLess(quiet.expectation, 0.05)
+        self.assertLess(notification.interruption, 0.10)
+
+
 class CompositionTests(unittest.TestCase):
     def test_embodied_mirror_contracts_under_tension_and_opens_on_release(self) -> None:
         config = LavaConfig(blobs=4)
@@ -557,6 +634,35 @@ class CompositionTests(unittest.TestCase):
 
         self.assertGreater(snap_spread, ordinary_spread * 1.25)
         self.assertEqual(spikes, [0.0] * 4)
+
+    def test_narrative_context_reuses_contraction_and_release_motion(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def spread(narrative: NarrativeState) -> float:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            for _ in range(80):
+                organism.update(
+                    1.0 / 22.0,
+                    AudioForces(energy=0.46),
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    AffectiveState(),
+                    narrative,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            return sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+
+        expected = spread(NarrativeState(expectation=0.88))
+        interrupted = spread(NarrativeState(interruption=0.86, resolution=0.62))
+
+        self.assertGreater(interrupted, expected * 1.35)
 
     def test_midwest_emo_posture_reaches_then_breaks_open(self) -> None:
         config = LavaConfig(blobs=4)

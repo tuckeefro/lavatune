@@ -40,6 +40,8 @@ from .organism import (
     AudioForces,
     Body,
     FieldFrame,
+    NarrativeState,
+    NarrativeTracker,
     OrganismFieldRenderer,
     TileComposition,
 )
@@ -362,11 +364,13 @@ class LavaField:
         self.motion_profile = motion_profile
         self.mapper = AudioForceMapper()
         self.affect_tracker = AffectiveTracker()
+        self.narrative_tracker = NarrativeTracker()
         self.organism = AcousticOrganism()
         self.renderer = OrganismFieldRenderer()
         self.forces = AudioForces()
         self.render_forces = AudioForces()
         self.affect = AffectiveState()
+        self.narrative = NarrativeState()
         self.reactions = ReactionLatch()
         self.metrics = RuntimeMetrics()
         self.field_frame = FieldFrame.empty(0, 0)
@@ -452,11 +456,13 @@ class LavaField:
         capacity = max(1, len(self.organism.bodies))
         self.mapper.reset()
         self.affect_tracker.reset()
+        self.narrative_tracker.reset()
         self.organism.reset(capacity)
         self.organism.seed_for_tile(self.w, self.h, capacity)
         self.forces = AudioForces()
         self.render_forces = AudioForces()
         self.affect = AffectiveState()
+        self.narrative = NarrativeState()
         self.reactions.clear()
         self._last_step_at = None
         self._last_audio_key = None
@@ -476,6 +482,11 @@ class LavaField:
         self.metrics.map_seconds += time.perf_counter() - started
         started = time.perf_counter()
         self.affect = self.affect_tracker.update(self.forces, float(frame.timestamp))
+        self.narrative = self.narrative_tracker.update(
+            self.forces,
+            self.affect,
+            float(frame.timestamp),
+        )
         self.metrics.affect_seconds += time.perf_counter() - started
         self.reactions.observe(self.forces, self.affect, time.monotonic())
         self._last_audio_key = key
@@ -522,6 +533,7 @@ class LavaField:
                     self.motion_profile,
                     cell_aspect,
                     self.affect,
+                    self.narrative,
                 )
             self.metrics.physics_steps += substeps
             self.metrics.physics_seconds += time.perf_counter() - physics_started
@@ -1424,6 +1436,8 @@ def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: A
             f"tone {field.forces.tone:0.2f} | tempo {field.forces.tempo:0.2f} | "
             f"pulse {field.forces.pulse:0.2f} | density {field.forces.rhythm_density:0.2f} | "
             f"hold/snap {field.affect.restraint:0.2f}/{field.affect.snap:0.2f} | "
+            f"story {field.narrative.expectation:0.1f}/"
+            f"{field.narrative.interruption:0.1f}/{field.narrative.resolution:0.1f} | "
             f"l/m/h {field.last_low:0.1f}/{field.last_mid:0.1f}/{field.last_high:0.1f}"
         )
     else:

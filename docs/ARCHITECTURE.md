@@ -16,6 +16,8 @@ Linux monitor process
         v                    v
   ReactionLatch       AffectiveTracker
         |                    |
+        |             NarrativeTracker
+        |                    |
         +---------+----------+
                   |
                   v
@@ -46,12 +48,13 @@ The divisions are deliberate. Audio analysis does not know about brightness, phy
 
 `audio.py` launches one local capture backend and reads signed 16-bit PCM. Normal listening uses a small Goertzel filter bank because its measured cost at the 1024-sample window is nearly identical to coarse analysis. `atlas` uses two one-pole filters in the envelope pass to retain broad low, mid, and high contrast at the larger low-power window.
 
-`organism.py` has four stages:
+`organism.py` has five stages:
 
 1. `AudioForceMapper` converts signal measurements into bass, voice, detail, transient, beat-scale tempo, rapid rhythmic density, spectral forces, and per-band deviation from recent context.
 2. `AffectiveTracker` integrates those forces into weight, agitation, cohesion, tension, openness, release, intimacy, volatility, novelty, fragility, yearning, restraint, snap, and catharsis. Restraint saturates after a short qualified passage; snap requires a credible attack plus one confirming frame of coherent long-baseline contrast. These are transparent acoustic posture axes, not classified emotions or genres.
-3. `AcousticOrganism` applies immediate forces and slower posture to persistent bodies in normalized coordinates.
-4. `OrganismFieldRenderer` rasterizes body mass, surface activity, and local attention into separate values from `0.0` to `1.0` for Text.
+3. `NarrativeTracker` interprets gestures through that posture as expectation, interruption, and resolution. It is a small deterministic context layer, not an inference model or a claim about authorial intent.
+4. `AcousticOrganism` applies immediate forces, slower posture, and low-gain narrative modifiers to persistent bodies in normalized coordinates.
+5. `OrganismFieldRenderer` rasterizes body mass, surface activity, and local attention into separate values from `0.0` to `1.0` for Text.
 
 `materials.py` maps organism state into Text or foreground-only Fluid cells. Text prepares the semantic field once per source row and interpolates it across the viewport. Fluid takes the faster path: it prepares body geometry once, emits only occupied row spans, and caches the latest quantized contour instead of rasterizing a full scalar field. Neither material contains curses state, audio analysis, or body physics, so output behavior can be tested directly. `app.py` owns the curses event loop, reaction latch, multi-rate scheduler, controls, tile layout, palette capacity, and final terminal writes. `LavaField` is the narrow adapter between the UI and the organism stages.
 
