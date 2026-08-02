@@ -5,7 +5,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from lavatune.app import UiState, _compute_layout, _effective_cell_width
+from lavatune.app import (
+    UiState,
+    _compute_layout,
+    _effective_cell_width,
+    _init_colors,
+    _palette_attr,
+)
 
 
 def config(**render_values):
@@ -13,6 +19,21 @@ def config(**render_values):
 
 
 class LayoutTests(unittest.TestCase):
+    def test_palette_initialization_respects_terminal_pair_capacity(self) -> None:
+        with (
+            patch("lavatune.app.curses.start_color"),
+            patch("lavatune.app.curses.use_default_colors"),
+            patch("lavatune.app.curses.COLORS", 8, create=True),
+            patch("lavatune.app.curses.COLOR_PAIRS", 5, create=True),
+            patch("lavatune.app.curses.init_pair") as init_pair,
+            patch("lavatune.app.curses.color_pair", side_effect=lambda pair_id: pair_id),
+        ):
+            _init_colors()
+
+            self.assertEqual(init_pair.call_count, 4)
+            self.assertEqual(_palette_attr("soft-afterglow", 3), 4)
+            self.assertEqual(_palette_attr("oxide", 3), 4)
+
     def test_compact_side_layout_uses_available_tile_and_keeps_dock_adjacent(self) -> None:
         layout = _compute_layout(40, 120, True, config(compact=True))
 

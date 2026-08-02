@@ -26,7 +26,9 @@ Resizing changes the stage, not the cast.
 - **Basin:** give four bodies separate home regions with room to meet.
 - **Current:** distribute bodies horizontally and let motion travel along the tile.
 
-Habitat anchors are weak. Bodies should settle toward a composition without looking attached to animation waypoints.
+Habitat anchors are weak. Continuous currents do most of the moving: chimney tiles rise through the middle and return at the walls, current tiles travel horizontally with a quiet return lane, and basin or micro tiles circulate. Bodies should settle toward a composition without looking attached to animation waypoints.
+
+The active cast has a mass-weighted visual center. A first viewport composes that center near the middle of the available tile, and a weak shared correction keeps it nearby as sound and circulation move the group. This translates the cast without pinning any individual body or erasing spacing, collisions, and wall contact.
 
 ## Acoustic Grammar
 
@@ -36,6 +38,7 @@ Habitat anchors are weak. Bodies should settle toward a composition without look
 - High detail deforms and textures smaller bodies more than it translates the group.
 - Cadence changes the rate of convection.
 - A transient selects one pitch-adjacent body, strikes one edge, and recovers more slowly than it arrived.
+- Strong rising events also send a bounded pressure wave across the shared tile. Nearby bodies feel it first; it changes motion and compression without spending the attention color.
 
 The mapping is intentionally elastic. Believable cause and effect matters more than frame-perfect beat synchronization.
 
@@ -44,6 +47,8 @@ The mapping is intentionally elastic. Believable cause and effect matters more t
 Body color is muted and matte. The final palette color belongs only to local afterglow. Loudness may change motion and deformation, but it must not turn the entire field bright.
 
 Normal operation shows the organism and optional local media title. Controls and diagnostics are temporary editing surfaces, not part of the daily composition.
+
+Text and Fluid are output materials applied after physics. Weight changes field occupancy, Edge changes surface definition, and Afterglow changes only the bounded attention contribution. A material change must never reset or reinterpret the organism.
 
 ## Review Protocol
 

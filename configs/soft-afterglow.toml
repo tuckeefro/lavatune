@@ -13,6 +13,11 @@ frame_size = 1024
 [render]
 glyphs = " .,:;~oO@"
 palette = "soft-afterglow"
+material = "text"
+weight = "balanced"
+edge = "soft"
+afterglow = "present"
+cell_aspect = 1.85
 show_stats = false
 scale = 3
 color_steps = 4

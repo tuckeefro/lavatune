@@ -15,11 +15,11 @@ Measured on the original Linux development machine with Python 3.13.5 on x86-64,
 
 | Habitat | Simulated cells | Milliseconds/frame | Pipeline frames/second |
 | --- | ---: | ---: | ---: |
-| Micro | 144 | 0.413 | 2423.6 |
-| Chimney | 640 | 3.801 | 263.1 |
-| Basin | 792 | 6.005 | 166.5 |
-| Current | 1080 | 8.037 | 124.4 |
+| Micro | 144 | 0.443 | 2257.8 |
+| Chimney | 640 | 3.846 | 260.0 |
+| Basin | 792 | 5.884 | 169.9 |
+| Current | 1080 | 7.872 | 127.0 |
 
-Peak resident memory for that benchmark process was approximately 18.3 MiB. Results vary with Python build, CPU, terminal size, and enabled profile, so these values are a comparison baseline rather than a compatibility guarantee.
+Peak resident memory for that benchmark process was approximately 18.8 MiB. Results vary with Python build, CPU, terminal size, and enabled profile, so these values are a comparison baseline rather than a compatibility guarantee.
 
 CI runs a short smoke benchmark to catch broken execution. It does not enforce timing thresholds across shared GitHub runners.

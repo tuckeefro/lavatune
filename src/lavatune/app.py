@@ -8,16 +8,35 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable, Sequence
 
 from .audio import AudioCapture, AudioFrame, DemoAudioCapture
-from .config import CONTENT_MODES, PROFILE_NAMES, AppConfig, LavaConfig, apply_profile
+from .config import (
+    CONTENT_MODES,
+    PROFILE_NAMES,
+    AppConfig,
+    LavaConfig,
+    apply_profile,
+    save_preferences,
+)
+from .materials import (
+    AFTERGLOW_NAMES,
+    EDGE_NAMES,
+    MATERIAL_NAMES,
+    WEIGHT_NAMES,
+    MaterialStyle,
+    material_for,
+    normalize_glyph_ramp,
+    visual_shade,
+)
 from .media import MediaInfo, MediaWatcher
 from .organism import (
     AcousticOrganism,
     AudioForceMapper,
     AudioForces,
     Body,
+    FieldFrame,
     OrganismFieldRenderer,
     TileComposition,
 )
@@ -37,6 +56,7 @@ DENSITY_MODES: dict[str, int] = {
     "medium": 4,
     "rich": 8,
 }
+DAILY_PALETTES = ("soft-afterglow", "mono", "ice", "oxide")
 PALETTES: dict[str, tuple[int, ...]] = {
     "soft-afterglow": (236, 60, 139, 187),
     "amber": (curses.COLOR_BLACK, curses.COLOR_RED, curses.COLOR_YELLOW, curses.COLOR_WHITE),
@@ -57,6 +77,7 @@ PALETTE_FALLBACKS: dict[str, tuple[int, ...]] = {
         curses.COLOR_YELLOW,
     ),
 }
+_PALETTE_PAIR_IDS: dict[str, tuple[int, ...]] = {}
 STYLE_PRESETS: dict[str, str] = {
     "liquid": " .,:;~oO@",
     "soft": " .:-=+*#%@",
@@ -218,6 +239,8 @@ class UiState:
     resolved_mode: str = "auto"
     audio_status: str = "booting"
     media: MediaInfo = field(default_factory=MediaInfo)
+    preferences_dirty: bool = False
+    preferences_due_at: float = 0.0
 
     def set_status(self, message: str, *, ttl: float = 1.8) -> None:
         self.status = sanitize_display_text(message, max_chars=500)
@@ -238,8 +261,7 @@ class LavaField:
         self.organism = AcousticOrganism()
         self.renderer = OrganismFieldRenderer()
         self.forces = AudioForces()
-        self.buffers: list[list[float]] = []
-        self.attention_buffers: list[list[float]] = []
+        self.field_frame = FieldFrame.empty(0, 0)
         self._last_step_at: float | None = None
         self.phase = 0.0
         self.reactivity = 1.0
@@ -252,6 +274,16 @@ class LavaField:
     @property
     def composition(self) -> TileComposition:
         return self.organism.composition
+
+    @property
+    def buffers(self) -> list[list[float]]:
+        """Compatibility composite used by metrics, not the material hot path."""
+
+        return self.field_frame.composite()
+
+    @property
+    def attention_buffers(self) -> list[list[float]]:
+        return self.field_frame.attention
 
     # These names match the terse status display. Properties keep that UI from
     # maintaining a second, easily stale copy of the mapped audio forces.
@@ -300,24 +332,24 @@ class LavaField:
         height = max(6, height)
         if width == self.w and height == self.h:
             return
+        first_viewport = self.w == 0 or self.h == 0
         self.w = width
         self.h = height
-        self.buffers = [[0.0] * width for _ in range(height)]
-        self.attention_buffers = [[0.0] * width for _ in range(height)]
+        if first_viewport:
+            self.organism.seed_for_tile(width, height, len(self.organism.bodies))
+        self.field_frame = FieldFrame.empty(width, height)
 
     def clear(self) -> None:
         capacity = max(1, len(self.organism.bodies))
         self.mapper.reset()
         self.organism.reset(capacity)
+        self.organism.seed_for_tile(self.w, self.h, capacity)
         self.forces = AudioForces()
         self._last_step_at = None
         self.phase = 0.0
         self.reactivity = 1.0
         self.frames_seen = 0
-        for row in self.buffers:
-            row[:] = [0.0] * self.w
-        for row in self.attention_buffers:
-            row[:] = [0.0] * self.w
+        self.field_frame = FieldFrame.empty(self.w, self.h)
 
     def step(
         self,
@@ -326,8 +358,9 @@ class LavaField:
         profile: str,
         reactivity: float,
         lava_config: LavaConfig,
+        cell_aspect: float = 1.85,
     ) -> None:
-        if not self.buffers:
+        if self.w <= 0 or self.h <= 0:
             return
         now = time.monotonic()
         nominal_fps = 22.0 if profile == "atlas" else 12.0 if profile == "power-save" else 28.0
@@ -342,14 +375,16 @@ class LavaField:
             self.h,
             lava_config,
             self.motion_profile,
+            cell_aspect,
         )
-        self.buffers, self.attention_buffers = self.renderer.render(
+        self.field_frame = self.renderer.render(
             self.organism.bodies,
             self.forces,
             self.w,
             self.h,
             self.organism.phase,
             self.motion_profile,
+            cell_aspect,
         )
 
         self.phase = self.organism.phase
@@ -400,17 +435,7 @@ def _display_text(value) -> str:
 
 
 def _glyph_text(value) -> str:
-    if isinstance(value, str):
-        text = value
-    elif isinstance(value, (list, tuple)):
-        text = "".join(str(part) for part in value)
-    else:
-        text = str(value)
-    if not text.strip():
-        return GLYPH_PRESETS[0]
-    if len(set(text)) < 2:
-        return GLYPH_PRESETS[0]
-    return text
+    return normalize_glyph_ramp(value)
 
 
 def _safe_add(win: curses.window, y: int, x: int, text: str, attr: int = 0) -> None:
@@ -480,24 +505,36 @@ def _effective_fps(config: AppConfig, frame: AudioFrame) -> float:
 def _init_colors() -> None:
     curses.start_color()
     curses.use_default_colors()
+    _PALETTE_PAIR_IDS.clear()
     pair_index = 1
     available_colors = max(0, getattr(curses, "COLORS", 0))
+    pair_limit = max(1, getattr(curses, "COLOR_PAIRS", 0))
+    if available_colors <= 0 or pair_limit <= 1:
+        _PALETTE_PAIR_IDS.update({name: (0,) * len(palette) for name, palette in PALETTES.items()})
+        return
     for name, palette in PALETTES.items():
+        if pair_index + len(palette) > pair_limit:
+            _PALETTE_PAIR_IDS[name] = _PALETTE_PAIR_IDS.get(
+                "soft-afterglow", (0,) * len(palette)
+            )
+            continue
         fallback = PALETTE_FALLBACKS.get(name, palette)
+        pair_ids = []
         for bucket, fg in enumerate(palette):
-            resolved = fg if fg < available_colors else fallback[bucket]
+            resolved = fg if 0 <= fg < available_colors else fallback[bucket]
+            if not 0 <= resolved < available_colors:
+                resolved = min(curses.COLOR_WHITE, available_colors - 1)
             curses.init_pair(pair_index, resolved, -1)
+            pair_ids.append(pair_index)
             pair_index += 1
+        _PALETTE_PAIR_IDS[name] = tuple(pair_ids)
 
 
 def _palette_attr(name: str, bucket: int) -> int:
-    names = tuple(PALETTES.keys())
-    try:
-        palette_index = names.index(name)
-    except ValueError:
-        palette_index = names.index("amber")
     bucket = max(0, min(bucket, 3))
-    return curses.color_pair(1 + palette_index * 4 + bucket)
+    pair_ids = _PALETTE_PAIR_IDS.get(name) or _PALETTE_PAIR_IDS.get("soft-afterglow")
+    pair_id = pair_ids[bucket] if pair_ids and bucket < len(pair_ids) else 0
+    return curses.color_pair(pair_id)
 
 
 def _env_value(name: str) -> str:
@@ -589,15 +626,8 @@ def _style_name(value) -> str:
 def _scene_name_for_config(config: AppConfig) -> str:
     palette = _palette_name(getattr(config.render, "palette", "amber"))
     style = _style_name(getattr(config.render, "glyphs", GLYPH_PRESETS[0]))
-    scale = int(getattr(config.render, "scale", 1))
-    colors = int(getattr(config.render, "color_steps", 4))
     for name, scene in SCENES.items():
-        if (
-            scene["palette"] == palette
-            and scene["style"] == style
-            and scene["scale"] == scale
-            and scene["colors"] == colors
-        ):
+        if scene["palette"] == palette and scene["style"] == style:
             return name
     return "custom"
 
@@ -622,7 +652,6 @@ def _apply_profile_in_place(config: AppConfig, profile_name: str) -> None:
 
 
 def _product_preset_name_for_config(config: AppConfig) -> str:
-    scene = _scene_name_for_config(config)
     profile = getattr(config, "profile", "atlas")
     content = getattr(config, "content_mode", "auto")
     fps = int(getattr(config, "fps", 24))
@@ -631,8 +660,7 @@ def _product_preset_name_for_config(config: AppConfig) -> str:
     density = _density_name(int(getattr(config.lava, "blobs", 5)))
     for name, preset in PRODUCT_PRESETS.items():
         if (
-            preset["scene"] == scene
-            and preset["profile"] == profile
+            preset["profile"] == profile
             and preset["content"] == content
             and int(preset["fps"]) == fps
             and preset["analysis"] == analysis
@@ -646,7 +674,6 @@ def _product_preset_name_for_config(config: AppConfig) -> str:
 def _apply_product_preset(config: AppConfig, preset_name: str) -> None:
     preset = PRODUCT_PRESETS[preset_name]
     _apply_profile_in_place(config, str(preset["profile"]))
-    _apply_scene(config, str(preset["scene"]))
     setattr(config, "content_mode", str(preset["content"]))
     setattr(config, "fps", int(preset["fps"]))
     setattr(config.audio, "analysis", str(preset["analysis"]))
@@ -658,11 +685,9 @@ def _apply_product_preset(config: AppConfig, preset_name: str) -> None:
 
 
 def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
-    scene_state = {"name": _scene_name_for_config(config)}
     preset_state = {"name": _product_preset_name_for_config(config)}
 
     def refresh_states(config: AppConfig) -> None:
-        scene_state["name"] = _scene_name_for_config(config)
         preset_state["name"] = _product_preset_name_for_config(config)
 
     def choice_control(
@@ -737,14 +762,12 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
                 set_preset,
                 tuple(PRODUCT_PRESETS.keys()),
                 restart_audio=True,
-                reset_lava=True,
             ),
             choice_control(
                 "react",
                 lambda c: _reactivity_name(float(getattr(c.lava, "reactivity", 1.0))),
                 _set_reactivity,
                 tuple(REACTIVITY_MODES.keys()),
-                reset_lava=True,
                 on_change=mark_state,
             ),
             choice_control(
@@ -752,57 +775,40 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
                 lambda c: getattr(c, "content_mode", "auto"),
                 lambda c, v: setattr(c, "content_mode", v),
                 CONTENT_MODES,
-                reset_lava=True,
                 on_change=mark_state,
             ),
         ],
         "Look": [
             choice_control(
+                "material",
+                lambda c: getattr(c.render, "material", "text"),
+                lambda c, v: setattr(c.render, "material", v),
+                MATERIAL_NAMES,
+            ),
+            choice_control(
+                "weight",
+                lambda c: getattr(c.render, "weight", "balanced"),
+                lambda c, v: setattr(c.render, "weight", v),
+                WEIGHT_NAMES,
+            ),
+            choice_control(
+                "edge",
+                lambda c: getattr(c.render, "edge", "soft"),
+                lambda c, v: setattr(c.render, "edge", v),
+                EDGE_NAMES,
+            ),
+            choice_control(
+                "afterglow",
+                lambda c: getattr(c.render, "afterglow", "present"),
+                lambda c, v: setattr(c.render, "afterglow", v),
+                AFTERGLOW_NAMES,
+            ),
+            choice_control(
                 "palette",
-                lambda c: _palette_name(getattr(c.render, "palette", "amber")),
+                lambda c: _palette_name(getattr(c.render, "palette", "soft-afterglow")),
                 lambda c, v: setattr(c.render, "palette", _palette_name(v)),
-                tuple(PALETTES.keys()),
+                DAILY_PALETTES,
                 on_change=mark_state,
-            ),
-            choice_control(
-                "style",
-                lambda c: _style_name(getattr(c.render, "glyphs", GLYPH_PRESETS[0])),
-                lambda c, v: setattr(c.render, "glyphs", STYLE_PRESETS.get(v, STYLE_PRESETS["soft"])),
-                tuple(STYLE_PRESETS.keys()),
-                reset_lava=True,
-                on_change=mark_state,
-            ),
-            choice_control(
-                "density",
-                lambda c: _density_name(int(getattr(c.lava, "blobs", 5))),
-                _set_density,
-                tuple(DENSITY_MODES.keys()),
-                reset_lava=True,
-                on_change=mark_state,
-            ),
-            int_control(
-                "detail",
-                lambda c: int(getattr(c.render, "scale", 1)),
-                lambda c, v: setattr(c.render, "scale", v),
-                low=1,
-                high=4,
-                step=1,
-                reset_lava=True,
-                on_change=mark_state,
-            ),
-            int_control(
-                "colors",
-                lambda c: int(getattr(c.render, "color_steps", 4)),
-                lambda c, v: setattr(c.render, "color_steps", v),
-                low=2,
-                high=4,
-                step=1,
-                on_change=mark_state,
-            ),
-            bool_control(
-                "stats",
-                lambda c: bool(getattr(c.render, "show_stats", True)),
-                lambda c, v: setattr(c.render, "show_stats", v),
             ),
         ],
         "System": [
@@ -812,7 +818,6 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
                 lambda c, v: setattr(c, "profile", v),
                 PROFILE_NAMES,
                 restart_audio=True,
-                reset_lava=True,
                 on_change=lambda c, v: (_apply_profile_in_place(c, v), mark_state(c, v)),
             ),
             int_control(
@@ -848,6 +853,11 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
                 BACKEND_MODES,
                 restart_audio=True,
             ),
+            bool_control(
+                "stats",
+                lambda c: bool(getattr(c.render, "show_stats", True)),
+                lambda c, v: setattr(c.render, "show_stats", v),
+            ),
         ],
     }
 
@@ -863,11 +873,7 @@ def _interpolated_row_value(source: Sequence[float], screen_x: int, screen_width
 
 
 def _visual_shade(value: float, texture: float = 0.0) -> float:
-    visible_cutoff = 0.055
-    if value <= visible_cutoff:
-        return 0.0
-    shade = _clamp(((value - visible_cutoff) / (1.0 - visible_cutoff)) ** 0.82)
-    return _clamp(shade + texture * shade * (1.0 - shade))
+    return visual_shade(value, texture)
 
 
 def _semantic_color_bucket(shade: float, attention: float, color_steps: int) -> int:
@@ -881,6 +887,11 @@ def _semantic_color_bucket(shade: float, attention: float, color_steps: int) -> 
     return max(1, min(color_steps - 2, int(shade * (color_steps - 1))))
 
 
+def _unicode_output_supported(encoding: str | None = None) -> bool:
+    resolved = (encoding or sys.stdout.encoding or "").replace("-", "").lower()
+    return "utf8" in resolved
+
+
 def _draw_visual(
     win: curses.window,
     field: LavaField,
@@ -890,8 +901,17 @@ def _draw_visual(
 ) -> None:
     height, width = win.getmaxyx()
     palette = _palette_name(getattr(config.render, "palette", "amber"))
-    glyphs = _glyph_text(getattr(config.render, "glyphs", GLYPH_PRESETS[0]))
     color_steps = max(2, min(4, int(getattr(config.render, "color_steps", 4))))
+    material = material_for(
+        getattr(config.render, "material", "text"),
+        unicode_supported=_unicode_output_supported(),
+    )
+    style = MaterialStyle(
+        glyphs=_glyph_text(getattr(config.render, "glyphs", GLYPH_PRESETS[0])),
+        weight=getattr(config.render, "weight", "balanced"),
+        edge=getattr(config.render, "edge", "soft"),
+        afterglow=getattr(config.render, "afterglow", "present"),
+    )
     cell_w = _effective_cell_width(config, width, height)
     grid_w = max(10, width // cell_w)
     grid_h = max(6, height)
@@ -900,22 +920,24 @@ def _draw_visual(
     # Group adjacent cells with the same color attribute. Fewer addnstr calls
     # matter more than the arithmetic when a terminal redraws thirty times/sec.
     for y in range(min(height, field.h)):
-        source = field.buffers[y]
-        attention_source = field.attention_buffers[y]
         screen_y = y
         run_text = ""
         run_attr = -1
         run_start = 0
         for screen_x in range(width):
-            value = _interpolated_row_value(source, screen_x, width)
-            attention = _interpolated_row_value(attention_source, screen_x, width)
-            texture = math.sin(screen_x * 1.73 + y * 2.31 + field.phase * 3.2) * 0.035
-            shade = _clamp(_visual_shade(value, texture) + attention * 0.10)
-            level = int(shade * (len(glyphs) - 1)) if glyphs else 0
-            if shade > 0.0:
-                level = max(1, level)
-            char = glyphs[level] if level > 0 else " "
-            bucket = _semantic_color_bucket(shade, attention, color_steps)
+            cell = material.cell(
+                field.field_frame,
+                screen_x,
+                y,
+                width,
+                height,
+                style,
+                field.phase,
+            )
+            char = cell.glyph
+            shade = cell.shade
+            attention = cell.attention
+            bucket = _semantic_color_bucket(cell.shade, cell.attention, color_steps)
             attr = _palette_attr(palette, bucket)
             if char != " " and shade < 0.30:
                 attr |= curses.A_DIM
@@ -1070,6 +1092,8 @@ def _handle_action(
         ui.selected_row = index
         message = controls[TAB_NAMES[ui.tab_index]][index].adjust(config, delta, ui)
         ui.set_status(message)
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
 
 
 def _handle_mouse(
@@ -1201,7 +1225,31 @@ def _handle_terminal_sequence(key: int, ui: UiState) -> bool:
     return True
 
 
-def _run_curses(stdscr: curses.window, config: AppConfig, demo: bool) -> int:
+def _save_pending_preferences(
+    config: AppConfig,
+    ui: UiState,
+    destination: Path | None,
+    *,
+    force: bool = False,
+) -> None:
+    if destination is None or not ui.preferences_dirty:
+        return
+    if not force and time.monotonic() < ui.preferences_due_at:
+        return
+    try:
+        save_preferences(config, destination)
+    except (OSError, TypeError, ValueError) as exc:
+        ui.set_status(f"preferences not saved: {exc}", ttl=3.0)
+    finally:
+        ui.preferences_dirty = False
+
+
+def _run_curses(
+    stdscr: curses.window,
+    config: AppConfig,
+    demo: bool,
+    saved_preferences: Path | None,
+) -> int:
     curses.curs_set(0)
     curses.noecho()
     curses.cbreak()
@@ -1248,6 +1296,8 @@ def _run_curses(stdscr: curses.window, config: AppConfig, demo: bool) -> int:
                 else:
                     _handle_key(key, config, ui, controls)
 
+            _save_pending_preferences(config, ui, saved_preferences)
+
             if ui.restart_audio:
                 capture.stop()
                 capture = _build_capture(config, demo)
@@ -1289,6 +1339,7 @@ def _run_curses(stdscr: curses.window, config: AppConfig, demo: bool) -> int:
                 getattr(config, "profile", "atlas"),
                 float(getattr(config.lava, "reactivity", 1.0)),
                 config.lava,
+                float(getattr(config.render, "cell_aspect", 1.85)),
             )
 
             try:
@@ -1313,6 +1364,7 @@ def _run_curses(stdscr: curses.window, config: AppConfig, demo: bool) -> int:
 
             next_draw = now + (1.0 / _effective_fps(config, last_frame))
     finally:
+        _save_pending_preferences(config, ui, saved_preferences, force=True)
         _set_focus_reporting(False)
         media.stop()
         capture.stop()
@@ -1323,9 +1375,20 @@ def _run_curses(stdscr: curses.window, config: AppConfig, demo: bool) -> int:
 class LavaTuneApp:
     """Public application wrapper used by the command-line entry point."""
 
-    def __init__(self, config: AppConfig, demo_mode: bool = False) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        demo_mode: bool = False,
+        saved_preferences: Path | None = None,
+    ) -> None:
         self.config = config
         self.demo_mode = demo_mode
+        self.saved_preferences = saved_preferences
 
     def run(self) -> int:
-        return curses.wrapper(_run_curses, self.config, self.demo_mode)
+        return curses.wrapper(
+            _run_curses,
+            self.config,
+            self.demo_mode,
+            self.saved_preferences,
+        )
