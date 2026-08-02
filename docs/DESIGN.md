@@ -37,6 +37,7 @@ The active cast has a mass-weighted visual center. A first viewport composes tha
 - Voice changes circulation most strongly around the listener.
 - High detail deforms and textures smaller bodies more than it translates the group.
 - Tempo changes the rate of convection and gives every body phase-offset breathing, stretch, and orbital pressure.
+- Rapid rhythmic density is separate from tempo. Closely spaced attacks add bounded contour flutter, repeated compression, and circulation pressure without pretending every subdivision is the main beat.
 - A transient selects one pitch-adjacent body for physical impact and softer afterglow.
 - Its contour points only when the listening band also exceeds its learned baseline.
 - A band spikes only when it rises meaningfully above its noise-aware rolling average over roughly 2.4 seconds. Steady loudness and repeated ordinary attacks remain soft.
@@ -83,6 +84,8 @@ A pass succeeds when:
 - resizing preserves identity and momentum
 - silence remains alive without demanding attention
 - a transient stays local and visibly recovers
+- a rapid run remains patterned instead of collapsing into one sustained maximum, then settles promptly when the run ends
+- steady compressed audio does not create rapid motion without repeated attacks
 - ordinary body intensity never receives the attention color
 - the closed control dock consumes no tile area
 - silence settles to the lowest cadence and ordinary music does not require transient cadence

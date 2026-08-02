@@ -12,6 +12,7 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 - Added fast-decaying directional contour spikes gated by per-band deviation from a noise-aware 2.4-second rolling average.
 - Added phase-offset tempo breathing, stretch, and circulation pressure to every persistent body.
 - Added an authored Midwest emo posture arc from fragile detail and yearning contraction into stored-tension catharsis.
+- Added genre-neutral rapid-pattern density so closely spaced attacks remain visibly patterned without replacing beat-scale tempo.
 
 ### Changed
 
@@ -23,6 +24,7 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 - Changed Fluid rendering to emit sparse occupied row spans, cache repeated contours, and write only terminal runs that changed.
 - Made audio-force smoothing elapsed-time based so response is stable across capture profiles and delayed frames.
 - Prepared Text material rows once before viewport interpolation instead of repeatedly sampling all semantic fields per cell.
+- Changed the reaction latch to accumulate bounded rapid impulses between lower-cadence physics steps instead of retaining only one peak.
 
 ## 0.1.0a1 - 2026-08-01
 

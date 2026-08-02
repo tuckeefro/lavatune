@@ -68,6 +68,22 @@ class LayoutTests(unittest.TestCase):
         self.assertTrue(scheduler.consume_immediate())
         self.assertEqual(scheduler.target_fps(app_config, 10.8), 2.0)
 
+    def test_scheduler_treats_rapid_pattern_density_as_a_short_burst(self) -> None:
+        app_config = SimpleNamespace(fps=22, profile="atlas")
+        scheduler = FrameScheduler(immediate=False)
+        quiet = AudioFrame(0.02, [0.03] * 8, 0.0, 0.04, 10.0)
+
+        scheduler.observe(
+            quiet,
+            AudioForces(rhythm_density=0.70, rhythm_impulse=0.55),
+            AffectiveState(),
+            0.55,
+            10.0,
+        )
+
+        self.assertEqual(scheduler.target_fps(app_config, 10.1), 14.0)
+        self.assertEqual(scheduler.physics_fps(10.1), 8.0)
+
     def test_sustained_release_does_not_extend_burst_forever(self) -> None:
         app_config = SimpleNamespace(fps=22, profile="atlas")
         scheduler = FrameScheduler(immediate=False)

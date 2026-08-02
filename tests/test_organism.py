@@ -178,6 +178,21 @@ class AudioForceTests(unittest.TestCase):
         self.assertEqual(retained.deviations, deviation)
         self.assertFalse(field.reactions.pending)
 
+    def test_reaction_latch_accumulates_rapid_impulses_between_physics_steps(self) -> None:
+        field = LavaField()
+
+        for timestamp in (1.0, 1.05, 1.10):
+            field.reactions.observe(
+                AudioForces(rhythm_density=0.72, rhythm_impulse=0.24),
+                AffectiveState(),
+                timestamp,
+            )
+        retained = field.reactions.consume(AudioForces())
+
+        self.assertGreater(retained.rhythm_impulse, 0.60)
+        self.assertEqual(retained.rhythm_density, 0.72)
+        self.assertFalse(field.reactions.pending)
+
     def test_capture_frames_are_mapped_between_lower_cadence_draws(self) -> None:
         field = LavaField()
         field.resize(44, 18)
@@ -266,6 +281,45 @@ class AudioForceTests(unittest.TestCase):
             )
 
         self.assertGreater(fast.tempo, slow.tempo + 0.25)
+
+    def test_rapid_subdivisions_drive_density_without_starving_tempo(self) -> None:
+        mapper = AudioForceMapper()
+        bands = [0.42, 0.48, 0.56, 0.64, 0.52, 0.45, 0.38, 0.31]
+
+        for index in range(18):
+            mapped = mapper.map(
+                AudioFrame(0.48, bands, 0.52, 0.16, 1.0 + index * 0.10),
+                "music",
+                1.0,
+            )
+
+        self.assertGreater(mapped.rhythm_density, 0.55)
+        self.assertGreater(mapped.tempo, 0.45)
+        self.assertGreater(mapped.rhythm_impulse, 0.20)
+
+        for index in range(14):
+            settled = mapper.map(
+                AudioFrame(0.48, bands, 0.0, 0.16, 2.8 + index * 0.10),
+                "music",
+                1.0,
+            )
+
+        self.assertLess(settled.rhythm_density, 0.08)
+        self.assertEqual(settled.rhythm_impulse, 0.0)
+
+    def test_steady_compressed_audio_does_not_fake_rapid_density(self) -> None:
+        mapper = AudioForceMapper()
+        bands = [0.62] * 8
+
+        for index in range(24):
+            mapped = mapper.map(
+                AudioFrame(0.62, bands, 0.0, 0.14, 1.0 + index * 0.05),
+                "music",
+                1.0,
+            )
+
+        self.assertLess(mapped.rhythm_density, 0.08)
+        self.assertEqual(mapped.rhythm_impulse, 0.0)
 
 
 class CompositionTests(unittest.TestCase):
@@ -406,6 +460,47 @@ class CompositionTests(unittest.TestCase):
         self.assertGreater(fast_motion, slow_motion * 1.08)
         self.assertTrue(all(change > 0.008 for change in shape_changes))
         self.assertGreater(max(shape_changes) - min(shape_changes), 0.01)
+
+    def test_rapid_density_adds_flutter_without_spending_directional_spikes(self) -> None:
+        config = LavaConfig(blobs=4)
+        steady = AcousticOrganism(body_limit=4)
+        rapid = AcousticOrganism(body_limit=4)
+        steady.seed_for_tile(44, 18, 4)
+        rapid.seed_for_tile(44, 18, 4)
+
+        for index in range(36):
+            steady.update(
+                1.0 / 22.0,
+                AudioForces(energy=0.62, tempo=0.72),
+                44,
+                18,
+                config,
+                "buoyant",
+            )
+            rapid.update(
+                1.0 / 22.0,
+                AudioForces(
+                    energy=0.62,
+                    tempo=0.72,
+                    rhythm_density=0.82,
+                    rhythm_impulse=0.48 if index % 3 == 0 else 0.0,
+                ),
+                44,
+                18,
+                config,
+                "buoyant",
+            )
+
+        pose_delta = sum(
+            abs(dense.x - plain.x)
+            + abs(dense.y - plain.y)
+            + abs(dense.stretch_x - plain.stretch_x)
+            + abs(dense.stretch_y - plain.stretch_y)
+            for plain, dense in zip(steady.bodies[:4], rapid.bodies[:4])
+        )
+
+        self.assertGreater(pose_delta, 0.08)
+        self.assertEqual([body.spike for body in rapid.bodies[:4]], [0.0] * 4)
 
     def test_tile_composition_changes_topology_instead_of_only_scale(self) -> None:
         self.assertEqual(compose_tile(24, 10, 8).active_bodies, 1)

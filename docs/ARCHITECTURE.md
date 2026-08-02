@@ -48,7 +48,7 @@ The divisions are deliberate. Audio analysis does not know about brightness, phy
 
 `organism.py` has four stages:
 
-1. `AudioForceMapper` converts signal measurements into bass, voice, detail, transient, tempo, spectral forces, and per-band deviation from recent context.
+1. `AudioForceMapper` converts signal measurements into bass, voice, detail, transient, beat-scale tempo, rapid rhythmic density, spectral forces, and per-band deviation from recent context.
 2. `AffectiveTracker` integrates those forces into weight, agitation, cohesion, tension, openness, release, intimacy, volatility, novelty, fragility, yearning, and catharsis. These are transparent acoustic posture axes, not classified emotions or genres.
 3. `AcousticOrganism` applies immediate forces and slower posture to persistent bodies in normalized coordinates.
 4. `OrganismFieldRenderer` rasterizes body mass, surface activity, and local attention into separate values from `0.0` to `1.0` for Text.
@@ -65,7 +65,7 @@ The divisions are deliberate. Audio analysis does not know about brightness, phy
 
 Bodies keep positions, velocity, and character in normalized `0.0` to `1.0` coordinates. Radius and collision calculations convert those coordinates through an approximate terminal cell aspect ratio, so a body keeps the same physical silhouette in a narrow chimney and a wide current. A resize changes `TileComposition` and the size of the scalar field, but does not recreate the bodies.
 
-Weak habitat anchors establish home regions while a continuous circulation field does most of the movement. Rising transients can emit up to three short-lived pressure waves from pitch-dependent tile edges. A wave travels through the shared vessel, disturbs each body when it arrives, and decays independently of the local afterglow assigned to the pitch-adjacent body. Each frequency band keeps a noise-aware 2.4-second rolling baseline after a short warmup. Only meaningful upward deviation from that baseline feeds a body's faster spike envelope; raw loudness and ordinary attacks cannot sharpen it. The point and impulse collapse before afterglow or phrase posture fades. This is why the reaction can be believable without making every body jump on the same frame.
+Weak habitat anchors establish home regions while a continuous circulation field does most of the movement. Rising transients can emit up to three short-lived pressure waves from pitch-dependent tile edges. A wave travels through the shared vessel, disturbs each body when it arrives, and decays independently of the local afterglow assigned to the pitch-adjacent body. Beat-scale tempo ignores intervals shorter than 140 milliseconds, while a separate density envelope accepts gated repeated attacks down to 35 milliseconds. This lets rapid subdivisions drive bounded flutter and pressure without replacing the larger tempo estimate. Each frequency band keeps a noise-aware 2.4-second rolling baseline after a short warmup. Only meaningful upward deviation from that baseline feeds a body's faster spike envelope; raw loudness and ordinary attacks cannot sharpen it. The point and impulse collapse before afterglow or phrase posture fades. This is why the reaction can be believable without making every body jump on the same frame.
 
 The first viewport seeds the cast in its actual habitat and translates its mass-weighted center near the visual midpoint. Later resizes never reseed it. A weak group correction continually nudges the centroid rather than pulling bodies individually, preserving internal circulation and momentum.
 
@@ -79,7 +79,7 @@ Fluid intersects analytic body ellipses with the top and bottom halves of each t
 
 ## Cadence and terminal writes
 
-Audio capture publishes a bounded sequence of analyzed frames and signals a nonblocking pipe. The main loop waits on that pipe and keyboard input instead of polling every 10 milliseconds, then maps every retained frame in order. `ReactionLatch` holds short attacks until the next visual frame, so prompt response does not require prompt terminal redraws.
+Audio capture publishes a bounded sequence of analyzed frames and signals a nonblocking pipe. The main loop waits on that pipe and keyboard input instead of polling every 10 milliseconds, then maps every retained frame in order. `ReactionLatch` holds peak gestures and accumulates bounded rapid impulses until the next physics step, so several attacks do not collapse into one merely because terminal drawing is slower than audio capture.
 
 Rendering cadence follows a hysteretic acoustic state rather than one fixed display rate. Resting, breathing, engaged, and burst states draw at 2, 4, 8, and 14 FPS. Physics advances independently at 2, 4, 6, and 8 FPS, using bounded elapsed-time substeps. Release starts one short burst when it crosses the meaningful threshold; its slower posture can remain visible without continuously extending that expensive state. The `power-save` profile caps display cadence at 6 FPS.
 

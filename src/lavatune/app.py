@@ -284,6 +284,8 @@ class ReactionLatch:
     transient: float = 0.0
     pulse: float = 0.0
     novelty: float = 0.0
+    rhythm_density: float = 0.0
+    rhythm_impulse: float = 0.0
     hits: tuple[float, ...] = (0.0,) * 8
     deviations: tuple[float, ...] = (0.0,) * 8
     requested_at: float = 0.0
@@ -294,6 +296,8 @@ class ReactionLatch:
             self.transient,
             self.pulse,
             self.novelty,
+            self.rhythm_density,
+            self.rhythm_impulse,
             max(self.hits, default=0.0),
             max(self.deviations, default=0.0),
         )
@@ -306,6 +310,8 @@ class ReactionLatch:
         self.transient = max(self.transient, forces.transient)
         self.pulse = max(self.pulse, forces.pulse)
         self.novelty = max(self.novelty, affect.novelty)
+        self.rhythm_density = max(self.rhythm_density, forces.rhythm_density)
+        self.rhythm_impulse = min(1.0, self.rhythm_impulse + forces.rhythm_impulse)
         self.hits = tuple(max(old, new) for old, new in zip(self.hits, forces.hits))
         self.deviations = tuple(
             max(old, new) for old, new in zip(self.deviations, forces.deviations)
@@ -319,6 +325,8 @@ class ReactionLatch:
             transient=max(forces.transient, self.transient),
             pulse=max(forces.pulse, self.pulse),
             flux=max(forces.flux, self.novelty * 0.72),
+            rhythm_density=max(forces.rhythm_density, self.rhythm_density),
+            rhythm_impulse=max(forces.rhythm_impulse, self.rhythm_impulse),
             hits=tuple(max(old, new) for old, new in zip(forces.hits, self.hits)),
             deviations=tuple(
                 max(old, new) for old, new in zip(forces.deviations, self.deviations)
@@ -327,6 +335,8 @@ class ReactionLatch:
         self.transient = 0.0
         self.pulse = 0.0
         self.novelty *= 0.24
+        self.rhythm_density = 0.0
+        self.rhythm_impulse = 0.0
         self.hits = (0.0,) * 8
         self.deviations = (0.0,) * 8
         self.requested_at = 0.0
@@ -336,6 +346,8 @@ class ReactionLatch:
         self.transient = 0.0
         self.pulse = 0.0
         self.novelty = 0.0
+        self.rhythm_density = 0.0
+        self.rhythm_impulse = 0.0
         self.hits = (0.0,) * 8
         self.deviations = (0.0,) * 8
         self.requested_at = 0.0
@@ -639,7 +651,13 @@ def _effective_fps(
     band_peak = max(frame.bands) if frame.bands else 0.0
     mapped = forces or AudioForces()
     mapped_peak = max(mapped.bass, mapped.voice, mapped.detail, mapped.energy)
-    if frame.attack >= 0.08 or mapped.transient >= 0.16 or mapped.pulse >= 0.18:
+    if (
+        frame.attack >= 0.08
+        or mapped.transient >= 0.16
+        or mapped.pulse >= 0.18
+        or mapped.rhythm_density >= 0.28
+        or mapped.rhythm_impulse >= 0.18
+    ):
         activity_target = 14
     elif frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28:
         activity_target = 8
@@ -686,6 +704,8 @@ class FrameScheduler:
             reaction_level >= 0.14
             or frame.attack >= 0.08
             or affect.novelty >= 0.16
+            or forces.rhythm_density >= 0.28
+            or forces.rhythm_impulse >= 0.18
             or release_started
         )
         engaged = frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28
@@ -1398,7 +1418,7 @@ def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: A
         status = (
             f"{preset} | {react} | {ui.resolved_mode} | {state} | "
             f"tone {field.forces.tone:0.2f} | tempo {field.forces.tempo:0.2f} | "
-            f"pulse {field.forces.pulse:0.2f} | "
+            f"pulse {field.forces.pulse:0.2f} | density {field.forces.rhythm_density:0.2f} | "
             f"l/m/h {field.last_low:0.1f}/{field.last_mid:0.1f}/{field.last_high:0.1f}"
         )
     else:
