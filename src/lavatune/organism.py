@@ -632,6 +632,32 @@ def tile_axis_scales(
     return reference / physical_width, reference / physical_height
 
 
+def adaptive_centroid_axis(
+    position: float,
+    target: float,
+    velocity: float,
+    dead_zone: float,
+) -> float:
+    """Return a soft shared correction only when a cast leaves its useful middle."""
+
+    displacement = position - target
+    distance = abs(displacement)
+    if distance <= dead_zone:
+        return 0.0
+
+    available_edge = max(target, 1.0 - target)
+    pressure = clamp((distance - dead_zone) / max(0.05, available_edge - dead_zone))
+    pressure = pressure * pressure * (3.0 - 2.0 * pressure)
+    direction = 1.0 if displacement > 0.0 else -1.0
+    leash = -direction * pressure * 0.22
+
+    # Remove only momentum that carries the whole cast farther outward. An
+    # inward return and motion parallel to an edge remain part of the current.
+    outward_velocity = velocity * direction
+    momentum_bleed = -velocity * pressure * 1.35 if outward_velocity > 0.0 else 0.0
+    return leash + momentum_bleed
+
+
 def circulation_at(
     composition: TileComposition,
     x: float,
@@ -933,9 +959,13 @@ class AcousticOrganism:
         mean_vx = sum(body.vx for body in self.bodies[:active_count]) / active_count
         mean_vy = sum(body.vy for body in self.bodies[:active_count]) / active_count
         mass_x, mass_y = self.center_of_mass(active_count)
-        center_gain = 0.24 if self.composition.habitat == "micro" else 0.16
-        group_pull_x = (0.5 - mass_x) * center_gain
-        group_pull_y = (center_y - mass_y) * center_gain
+        if self.composition.habitat == "current":
+            group_pull_x = adaptive_centroid_axis(mass_x, 0.5, mean_vx, 0.18)
+            group_pull_y = adaptive_centroid_axis(mass_y, center_y, mean_vy, 0.16)
+        else:
+            center_gain = 0.24 if self.composition.habitat == "micro" else 0.16
+            group_pull_x = (0.5 - mass_x) * center_gain
+            group_pull_y = (center_y - mass_y) * center_gain
 
         for index, body in enumerate(self.bodies):
             active = index < self.composition.active_bodies

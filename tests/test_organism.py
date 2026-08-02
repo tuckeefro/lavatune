@@ -28,6 +28,7 @@ from lavatune.organism import (
     AudioForces,
     NarrativeState,
     NarrativeTracker,
+    adaptive_centroid_axis,
     circulation_at,
     compose_tile,
     habitat_anchor,
@@ -895,6 +896,61 @@ class CompositionTests(unittest.TestCase):
             math.hypot(before_x - 0.5, before_y - 0.52),
         )
         self.assertGreater(after_spacing, before_spacing * 0.55)
+
+    def test_adaptive_centroid_leaves_middle_motion_free_and_bleeds_outward_momentum(self) -> None:
+        self.assertEqual(adaptive_centroid_axis(0.66, 0.5, 0.12, 0.20), 0.0)
+        self.assertEqual(adaptive_centroid_axis(0.34, 0.5, -0.12, 0.20), 0.0)
+
+        right_outward = adaptive_centroid_axis(0.86, 0.5, 0.12, 0.20)
+        right_inward = adaptive_centroid_axis(0.86, 0.5, -0.12, 0.20)
+        left_outward = adaptive_centroid_axis(0.14, 0.5, -0.12, 0.20)
+
+        self.assertLess(right_outward, right_inward)
+        self.assertLess(right_inward, 0.0)
+        self.assertAlmostEqual(left_outward, -right_outward)
+
+    def test_wide_current_returns_as_a_group_after_sustained_edge_dwell(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        organism.seed_for_tile(90, 12, 4)
+        for body in organism.bodies[:4]:
+            body.x = min(0.90, max(0.66, body.x + 0.34))
+            body.y = min(0.82, max(0.58, body.y + 0.18))
+            body.vx = 0.12
+            body.vy = 0.07
+            body.presence = 1.0
+        before_spacing = math.hypot(
+            organism.bodies[0].x - organism.bodies[1].x,
+            organism.bodies[0].y - organism.bodies[1].y,
+        )
+
+        sustained = AudioForces(
+            bass=0.72,
+            voice=0.48,
+            energy=0.76,
+            tempo=0.72,
+            pulse=0.38,
+            rhythm_density=0.66,
+        )
+        for _ in range(12):
+            organism.update(1.0 / 22.0, sustained, 90, 12, config, "buoyant")
+        brief_x, brief_y = organism.center_of_mass(4)
+
+        for _ in range(648):
+            organism.update(1.0 / 22.0, sustained, 90, 12, config, "buoyant")
+        returned_x, returned_y = organism.center_of_mass(4)
+        after_spacing = math.hypot(
+            organism.bodies[0].x - organism.bodies[1].x,
+            organism.bodies[0].y - organism.bodies[1].y,
+        )
+
+        self.assertGreater(brief_x, 0.70)
+        self.assertGreater(brief_y, 0.66)
+        self.assertLess(abs(returned_x - 0.5), abs(brief_x - 0.5))
+        self.assertLess(abs(returned_y - 0.53), abs(brief_y - 0.53))
+        self.assertLess(abs(returned_x - 0.5), 0.22)
+        self.assertLess(abs(returned_y - 0.53), 0.22)
+        self.assertGreater(after_spacing, before_spacing * 0.50)
 
     def test_first_viewport_seeds_the_cast_in_its_actual_habitat(self) -> None:
         field = LavaField()

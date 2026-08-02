@@ -72,7 +72,7 @@ Weak habitat anchors establish home regions while a continuous circulation field
 
 Snap contrast uses a separate 12-second capture-level and spectral baseline. Quiet readiness is capped after eight seconds, so a longer wait cannot make the response unbounded. The first attack arms a short candidate; sustained coherent contrast on the following frame confirms it. Confirmation consumes readiness and reuses the existing catharsis and outward-pressure vocabulary instead of adding another rendering system.
 
-The first viewport seeds the cast in its actual habitat and translates its mass-weighted center near the visual midpoint. Later resizes never reseed it. A weak group correction continually nudges the centroid rather than pulling bodies individually, preserving internal circulation and momentum.
+The first viewport seeds the cast in its actual habitat and translates its mass-weighted center near the visual midpoint. Later resizes never reseed it. Basin, chimney, and micro habitats use a weak group correction. A wide current instead gives its centroid a central dead zone, then applies a smooth nonlinear leash as the cast approaches an edge. The same correction removes only outward mean velocity, so an inward return and edge-parallel flow survive. Because the acceleration is shared, body spacing and internal circulation remain intact.
 
 For Text, compact mode adjusts simulated cell width against a target cell budget and the material interpolates the scalar field back across available terminal columns. Fluid instead composes bodies in the actual viewport and computes row spans at two vertical samples per terminal row. Both paths preserve normalized body state through resize.
 

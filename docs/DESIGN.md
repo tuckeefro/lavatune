@@ -28,7 +28,7 @@ Resizing changes the stage, not the cast.
 
 Habitat anchors are weak. Continuous currents do most of the moving: chimney tiles rise through the middle and return at the walls, current tiles travel horizontally with a quiet return lane, and basin or micro tiles circulate. Bodies should settle toward a composition without looking attached to animation waypoints.
 
-The active cast has a mass-weighted visual center. A first viewport composes that center near the middle of the available tile, and a weak shared correction keeps it nearby as sound and circulation move the group. This translates the cast without pinning any individual body or erasing spacing, collisions, and wall contact.
+The active cast has a mass-weighted visual center. A first viewport composes that center near the middle of the available tile. In a wide current, the useful middle is a dead zone with no group correction; near an edge, a nonlinear shared leash progressively redirects the cast and bleeds only its outward mean momentum. This permits a brief edge composition but prevents sustained sound from parking the whole cast in a corner. Other habitats retain a weak shared correction. Both approaches translate the cast without pinning any individual body or erasing spacing, collisions, and wall contact.
 
 ## Acoustic Grammar
 
@@ -98,6 +98,7 @@ A pass succeeds when:
 - a lone notification remains local and a gradual crescendo opens without a false snap
 - predictable motion establishes expectation and the same surprise has more consequence in context
 - resolution requires prior tension and release rather than loudness alone
+- sustained action may visit a current's edge but cannot leave the whole cast parked there
 - ordinary body intensity never receives the attention color
 - the closed control dock consumes no tile area
 - silence settles to the lowest cadence and ordinary music does not require transient cadence

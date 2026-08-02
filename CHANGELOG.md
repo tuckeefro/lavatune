@@ -18,6 +18,7 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 
 ### Changed
 
+- Changed wide-current centering to an adaptive dead-zone leash that prevents sustained corner crowding without filling or pinning the composition.
 - Replaced Fluid's full scalar-field raster and per-cell gradient sampling with analytic body contours and localized edge attention.
 - Added hysteretic 2/4/8/14 FPS display pacing and a separate 2/4/6/8 FPS physics clock while preserving elapsed time through bounded simulation substeps.
 - Decoupled capture-frame mapping from display cadence with a bounded sequenced queue and event notifier.
