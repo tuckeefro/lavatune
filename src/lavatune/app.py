@@ -687,6 +687,7 @@ class FrameScheduler:
     breathing_until: float = 0.0
     immediate: bool = True
     last_release: float = 0.0
+    last_snap: float = 0.0
 
     def observe(
         self,
@@ -699,7 +700,9 @@ class FrameScheduler:
         band_peak = max(frame.bands, default=0.0)
         mapped_peak = max(forces.bass, forces.voice, forces.detail, forces.energy)
         release_started = affect.release >= 0.16 and self.last_release < 0.16
+        snap_started = affect.snap >= 0.16 and self.last_snap < 0.16
         self.last_release = affect.release
+        self.last_snap = affect.snap
         burst = (
             reaction_level >= 0.14
             or frame.attack >= 0.08
@@ -707,6 +710,7 @@ class FrameScheduler:
             or forces.rhythm_density >= 0.28
             or forces.rhythm_impulse >= 0.18
             or release_started
+            or snap_started
         )
         engaged = frame.rms >= 0.10 or band_peak >= 0.20 or mapped_peak >= 0.28
         breathing = frame.rms >= 0.025 or band_peak >= 0.065 or mapped_peak >= 0.09
@@ -1419,6 +1423,7 @@ def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: A
             f"{preset} | {react} | {ui.resolved_mode} | {state} | "
             f"tone {field.forces.tone:0.2f} | tempo {field.forces.tempo:0.2f} | "
             f"pulse {field.forces.pulse:0.2f} | density {field.forces.rhythm_density:0.2f} | "
+            f"hold/snap {field.affect.restraint:0.2f}/{field.affect.snap:0.2f} | "
             f"l/m/h {field.last_low:0.1f}/{field.last_mid:0.1f}/{field.last_high:0.1f}"
         )
     else:

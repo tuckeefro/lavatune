@@ -100,6 +100,180 @@ class AudioForceTests(unittest.TestCase):
         self.assertGreater(released.release, 0.45)
         self.assertGreater(released.tension, 0.20)
 
+    def test_restraint_saturates_so_ten_and_long_waits_snap_alike(self) -> None:
+        calm = AudioForces(
+            voice=0.28,
+            detail=0.38,
+            energy=0.20,
+            level=0.20,
+            bands=(0.12, 0.14, 0.18, 0.22, 0.20, 0.19, 0.16, 0.13),
+        )
+        attack = AudioForces(
+            bass=0.82,
+            voice=0.68,
+            detail=0.74,
+            transient=0.92,
+            energy=0.94,
+            level=0.94,
+            pulse=0.84,
+            flux=0.72,
+            bands=(0.82, 0.78, 0.74, 0.86, 0.80, 0.88, 0.92, 0.84),
+        )
+        sustain = AudioForces(
+            bass=0.78,
+            voice=0.64,
+            detail=0.68,
+            energy=0.90,
+            level=0.90,
+            pulse=0.24,
+            bands=(0.78, 0.74, 0.70, 0.82, 0.76, 0.84, 0.88, 0.80),
+        )
+
+        def snap_after(seconds: float) -> tuple[AffectiveState, AffectiveState]:
+            tracker = AffectiveTracker()
+            steps = round(seconds / 0.10)
+            held = AffectiveState()
+            for index in range(steps):
+                held = tracker.update(calm, 1.0 + index * 0.10)
+            tracker.update(attack, 1.0 + steps * 0.10)
+            snapped = tracker.update(sustain, 1.1 + steps * 0.10)
+            return held, snapped
+
+        short_hold, early = snap_after(10.0)
+        long_hold, late = snap_after(130.0)
+
+        self.assertEqual(short_hold.restraint, 1.0)
+        self.assertEqual(long_hold.restraint, 1.0)
+        self.assertGreater(early.snap, 0.65)
+        self.assertAlmostEqual(early.snap, late.snap, delta=0.04)
+        self.assertAlmostEqual(early.catharsis, late.catharsis, delta=0.08)
+
+    def test_brief_pause_does_not_earn_full_snap_choreography(self) -> None:
+        tracker = AffectiveTracker()
+        calm = AudioForces(energy=0.18, level=0.18, detail=0.32, bands=(0.14,) * 8)
+        attack = AudioForces(
+            energy=0.94,
+            level=0.94,
+            transient=0.92,
+            pulse=0.82,
+            flux=0.70,
+            bands=(0.86,) * 8,
+        )
+        sustain = AudioForces(energy=0.90, level=0.90, bands=(0.82,) * 8)
+        for index in range(20):
+            tracker.update(calm, 1.0 + index * 0.10)
+
+        tracker.update(attack, 3.0)
+        snapped = tracker.update(sustain, 3.1)
+
+        self.assertLess(snapped.restraint, 0.30)
+        self.assertLess(snapped.snap, 0.30)
+
+    def test_single_notification_after_restraint_stays_a_local_event(self) -> None:
+        tracker = AffectiveTracker()
+        calm = AudioForces(energy=0.18, level=0.18, detail=0.28, bands=(0.12,) * 8)
+        notification = AudioForces(
+            energy=0.92,
+            level=0.92,
+            transient=0.96,
+            pulse=0.88,
+            flux=0.76,
+            bands=(0.88,) * 8,
+        )
+        for index in range(110):
+            tracker.update(calm, 1.0 + index * 0.10)
+
+        candidate = tracker.update(notification, 12.0)
+        after = tracker.update(AudioForces(), 12.1)
+
+        self.assertLess(candidate.snap, 0.10)
+        self.assertLess(after.snap, 0.10)
+
+    def test_gradual_crescendo_opens_without_false_snap(self) -> None:
+        tracker = AffectiveTracker()
+        calm_bands = (0.12,) * 8
+        for index in range(110):
+            tracker.update(
+                AudioForces(energy=0.18, level=0.18, detail=0.26, bands=calm_bands),
+                1.0 + index * 0.10,
+            )
+
+        peak_snap = 0.0
+        for index in range(40):
+            amount = index / 39.0
+            state = tracker.update(
+                AudioForces(
+                    energy=0.18 + amount * 0.70,
+                    level=0.18 + amount * 0.70,
+                    detail=0.26 + amount * 0.34,
+                    transient=0.015,
+                    pulse=0.02,
+                    bands=tuple(0.12 + amount * 0.66 for _ in range(8)),
+                ),
+                12.0 + index * 0.10,
+            )
+            peak_snap = max(peak_snap, state.snap)
+
+        self.assertLess(peak_snap, 0.10)
+        self.assertGreater(state.openness, 0.12)
+
+    def test_already_loud_audio_cannot_prime_a_full_snap(self) -> None:
+        tracker = AffectiveTracker()
+        loud = AudioForces(
+            energy=0.82,
+            level=0.82,
+            bass=0.64,
+            detail=0.60,
+            bands=(0.72,) * 8,
+        )
+        for index in range(120):
+            tracker.update(loud, 1.0 + index * 0.10)
+        tracker.update(
+            AudioForces(
+                energy=0.96,
+                level=0.96,
+                transient=0.90,
+                pulse=0.82,
+                flux=0.60,
+                bands=(0.90,) * 8,
+            ),
+            13.0,
+        )
+        state = tracker.update(
+            AudioForces(energy=0.92, level=0.92, bands=(0.86,) * 8), 13.1
+        )
+
+        self.assertLess(state.restraint, 0.10)
+        self.assertLess(state.snap, 0.15)
+
+    def test_mapped_quiet_to_loud_frames_preserve_snap_contrast(self) -> None:
+        mapper = AudioForceMapper()
+        tracker = AffectiveTracker()
+        quiet_bands = [0.10, 0.11, 0.13, 0.15, 0.14, 0.12, 0.10, 0.09]
+        for index in range(120):
+            quiet = mapper.map(
+                AudioFrame(0.08, quiet_bands, 0.0, 0.06, 1.0 + index * 0.10),
+                "music",
+                1.0,
+            )
+            held = tracker.update(quiet, 1.0 + index * 0.10)
+
+        attack = mapper.map(
+            AudioFrame(0.65, [0.80] * 8, 0.90, 0.18, 13.0),
+            "music",
+            1.0,
+        )
+        tracker.update(attack, 13.0)
+        sustain = mapper.map(
+            AudioFrame(0.58, [0.75] * 8, 0.02, 0.16, 13.1),
+            "music",
+            1.0,
+        )
+        snapped = tracker.update(sustain, 13.1)
+
+        self.assertEqual(held.restraint, 1.0)
+        self.assertGreater(snapped.snap, 0.60)
+
     def test_midwest_emo_arc_moves_from_fragile_yearning_to_catharsis(self) -> None:
         tracker = AffectiveTracker()
         verse = AudioForces(
@@ -353,6 +527,36 @@ class CompositionTests(unittest.TestCase):
 
         self.assertLess(contracted, 0.23)
         self.assertGreater(released, contracted * 1.55)
+
+    def test_confirmed_snap_breaks_the_group_open_without_spending_attention(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def run(affect: AffectiveState) -> tuple[float, list[float]]:
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            for _ in range(48):
+                organism.update(
+                    1.0 / 22.0,
+                    AudioForces(energy=0.72),
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    affect,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            spread = sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+            return spread, [body.spike for body in organism.bodies[:4]]
+
+        ordinary_spread, _ = run(AffectiveState())
+        snap_spread, spikes = run(AffectiveState(snap=0.86, catharsis=0.78))
+
+        self.assertGreater(snap_spread, ordinary_spread * 1.25)
+        self.assertEqual(spikes, [0.0] * 4)
 
     def test_midwest_emo_posture_reaches_then_breaks_open(self) -> None:
         config = LavaConfig(blobs=4)

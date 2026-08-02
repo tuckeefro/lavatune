@@ -13,6 +13,7 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 - Added phase-offset tempo breathing, stretch, and circulation pressure to every persistent body.
 - Added an authored Midwest emo posture arc from fragile detail and yearning contraction into stored-tension catharsis.
 - Added genre-neutral rapid-pattern density so closely spaced attacks remain visibly patterned without replacing beat-scale tempo.
+- Added saturating restraint and confirmed snap behavior so quiet-to-loud breaks receive consistent cathartic action without duration-based escalation.
 
 ### Changed
 

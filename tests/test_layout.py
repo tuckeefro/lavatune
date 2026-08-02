@@ -84,6 +84,19 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(scheduler.target_fps(app_config, 10.1), 14.0)
         self.assertEqual(scheduler.physics_fps(10.1), 8.0)
 
+    def test_confirmed_snap_starts_one_bounded_burst(self) -> None:
+        app_config = SimpleNamespace(fps=22, profile="atlas")
+        scheduler = FrameScheduler(immediate=False)
+        quiet = AudioFrame(0.02, [0.03] * 8, 0.0, 0.04, 10.0)
+
+        scheduler.observe(quiet, AudioForces(), AffectiveState(snap=0.82), 0.0, 10.0)
+        first_until = scheduler.burst_until
+        scheduler.observe(quiet, AudioForces(), AffectiveState(snap=0.68), 0.0, 10.1)
+
+        self.assertEqual(scheduler.target_fps(app_config, 10.1), 14.0)
+        self.assertEqual(first_until, 10.22)
+        self.assertEqual(scheduler.burst_until, first_until)
+
     def test_sustained_release_does_not_extend_burst_forever(self) -> None:
         app_config = SimpleNamespace(fps=22, profile="atlas")
         scheduler = FrameScheduler(immediate=False)

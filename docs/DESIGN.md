@@ -49,6 +49,8 @@ The mapping is intentionally elastic. Believable cause and effect matters more t
 
 The organism responds on three overlapping clocks. Gesture-scale cues such as attacks and band rises land immediately and leave a brief physical memory. Phrase-scale cues accumulate agitation, tension, volatility, and novelty over a few seconds. Atmosphere-scale cues slowly establish weight, cohesion, openness, and intimacy. A sudden fall after sustained pressure becomes release.
 
+Restrained passages establish a separate readiness for contrast. Readiness fills over roughly eight to ten seconds, saturates, and never grows larger merely because restraint continues. A credible attack followed by one confirming frame of coherent multi-band change consumes that readiness as a snap: first local impact, then bounded group opening and cathartic circulation. Equivalent snaps after 10 seconds and 130 seconds should therefore produce equivalent action. A lone notification remains local, while a gradual crescendo opens the posture without crossing an arbitrary snap threshold.
+
 These values describe posture rather than claiming to recognize sadness, joy, anger, or any other named emotion. Tension and intimacy contract the group, weight lowers its center, agitation roughens circulation and edges, and openness or release expands the cast. Brightness remains on a separate attention budget, so an emotionally intense passage can change stance and motion without washing out the tile.
 
 The intended arc is legible but restrained: pressure gathers, bodies draw closer and hold more memory, a change in the source registers promptly, and release opens the composition. The posture should remain believable across speech and noisy guitars without pretending that either has one deterministic meaning.
@@ -86,6 +88,8 @@ A pass succeeds when:
 - a transient stays local and visibly recovers
 - a rapid run remains patterned instead of collapsing into one sustained maximum, then settles promptly when the run ends
 - steady compressed audio does not create rapid motion without repeated attacks
+- established restraint produces the same bounded snap after 10 seconds or 130 seconds
+- a lone notification remains local and a gradual crescendo opens without a false snap
 - ordinary body intensity never receives the attention color
 - the closed control dock consumes no tile area
 - silence settles to the lowest cadence and ordinary music does not require transient cadence
