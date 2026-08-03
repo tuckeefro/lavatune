@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import unittest
 
+from lavatune.fluid import FluidMaterial as ExtractedFluidMaterial
 from lavatune.materials import (
     FLUID_MATERIAL,
     FluidMaterial,
@@ -14,6 +15,7 @@ from lavatune.materials import (
     normalize_glyph_ramp,
 )
 from lavatune.organism import AcousticOrganism, AudioForces, FieldFrame, NarrativeState
+from lavatune.volume import VolumeMaterial as ExtractedVolumeMaterial
 from lavatune.wax import WaxState
 
 
@@ -42,6 +44,10 @@ class GlyphRampTests(unittest.TestCase):
 
 
 class MaterialTests(unittest.TestCase):
+    def test_materials_facade_reexports_the_extracted_renderers(self) -> None:
+        self.assertIs(FluidMaterial, ExtractedFluidMaterial)
+        self.assertIs(type(VOLUME_MATERIAL), ExtractedVolumeMaterial)
+
     def test_text_material_uses_the_authored_glyph_ramp(self) -> None:
         semantic = frame([[0.0, 0.35, 0.72]])
         style = MaterialStyle(glyphs=" .x@")
