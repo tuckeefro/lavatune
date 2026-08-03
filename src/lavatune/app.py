@@ -23,31 +23,43 @@ from .materials import (
     EDGE_NAMES,
     MATERIAL_NAMES,
     WEIGHT_NAMES,
-    MaterialStyle,
-    material_for,
     normalize_glyph_ramp,
-    visual_shade,
 )
 from .media import MediaInfo, MediaWatcher
 from .organism import behavior_for_context
 from .runtime import LavaField, ReactionLatch, RuntimeMetrics
-from .signals import AffectiveState, AudioForces, clamp
+from .signals import AffectiveState, AudioForces
 from .tui import (
     Button,
     COMPACT_TARGET_CELLS,
     Control,
+    DAILY_PALETTES,
     Layout,
+    PALETTE_FALLBACKS,
+    PALETTES,
+    TAB_NAMES,
     UiState,
     VisualCache,
+    changed_cell_runs as _changed_cell_runs,
+    changed_sparse_runs as _changed_sparse_runs,
     clamp_visual_size as _clamp_visual_size,
     compact_layout as _compact_layout,
     compute_layout as _compute_layout,
+    draw_dock,
+    draw_status,
+    draw_visual,
     effective_cell_width as _effective_cell_width,
+    init_colors as _init_colors,
+    interpolated_row_value as _interpolated_row_value,
+    palette_attr as _palette_attr,
+    palette_name as _palette_name,
     safe_add as _safe_add,
+    semantic_color_bucket as _semantic_color_bucket,
+    unicode_output_supported as _unicode_output_supported,
+    visual_shade as _visual_shade,
     visual_limits as _visual_limits,
 )
 
-TAB_NAMES = ("Listening",)
 ANALYSIS_MODES = ("atlas", "bands")
 BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
 REACTIVITY_MODES: dict[str, float] = {
@@ -60,28 +72,6 @@ DENSITY_MODES: dict[str, int] = {
     "medium": 4,
     "rich": 8,
 }
-DAILY_PALETTES = ("soft-afterglow", "mono", "ice", "oxide")
-PALETTES: dict[str, tuple[int, ...]] = {
-    "soft-afterglow": (236, 60, 139, 187),
-    "amber": (curses.COLOR_BLACK, curses.COLOR_RED, curses.COLOR_YELLOW, curses.COLOR_WHITE),
-    "matrix": (curses.COLOR_BLACK, curses.COLOR_GREEN, curses.COLOR_GREEN, curses.COLOR_WHITE),
-    "ice": (curses.COLOR_BLACK, curses.COLOR_BLUE, curses.COLOR_CYAN, curses.COLOR_WHITE),
-    "oxide": (curses.COLOR_BLACK, curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_YELLOW),
-    "mono": (curses.COLOR_BLACK, curses.COLOR_WHITE, curses.COLOR_WHITE, curses.COLOR_WHITE),
-    "mint": (curses.COLOR_BLACK, curses.COLOR_GREEN, curses.COLOR_CYAN, curses.COLOR_WHITE),
-    "sunset": (curses.COLOR_BLACK, curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_YELLOW),
-    "paper": (curses.COLOR_BLACK, curses.COLOR_WHITE, curses.COLOR_YELLOW, curses.COLOR_CYAN),
-    "rose": (curses.COLOR_BLACK, curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_WHITE),
-}
-PALETTE_FALLBACKS: dict[str, tuple[int, ...]] = {
-    "soft-afterglow": (
-        curses.COLOR_BLACK,
-        curses.COLOR_MAGENTA,
-        curses.COLOR_WHITE,
-        curses.COLOR_YELLOW,
-    ),
-}
-_PALETTE_PAIR_IDS: dict[str, tuple[int, ...]] = {}
 STYLE_PRESETS: dict[str, str] = {
     "liquid": " .,:;~oO@",
     "soft": " .:-=+*#%@",
@@ -411,51 +401,6 @@ def _wait_for_activity(
         capture.consume_signal()
 
 
-def _init_colors() -> None:
-    _PALETTE_PAIR_IDS.clear()
-    try:
-        curses.start_color()
-        curses.use_default_colors()
-    except curses.error:
-        _PALETTE_PAIR_IDS.update(
-            {name: (0,) * len(palette) for name, palette in PALETTES.items()}
-        )
-        return
-    pair_index = 1
-    available_colors = max(0, getattr(curses, "COLORS", 0))
-    pair_limit = max(1, getattr(curses, "COLOR_PAIRS", 0))
-    if available_colors <= 0 or pair_limit <= 1:
-        _PALETTE_PAIR_IDS.update({name: (0,) * len(palette) for name, palette in PALETTES.items()})
-        return
-    for name, palette in PALETTES.items():
-        if pair_index + len(palette) > pair_limit:
-            _PALETTE_PAIR_IDS[name] = _PALETTE_PAIR_IDS.get(
-                "soft-afterglow", (0,) * len(palette)
-            )
-            continue
-        fallback = PALETTE_FALLBACKS.get(name, palette)
-        pair_ids = []
-        for bucket, fg in enumerate(palette):
-            resolved = fg if 0 <= fg < available_colors else fallback[bucket]
-            if not 0 <= resolved < available_colors:
-                resolved = min(curses.COLOR_WHITE, available_colors - 1)
-            try:
-                curses.init_pair(pair_index, resolved, -1)
-            except curses.error:
-                pair_ids.append(0)
-            else:
-                pair_ids.append(pair_index)
-            pair_index += 1
-        _PALETTE_PAIR_IDS[name] = tuple(pair_ids)
-
-
-def _palette_attr(name: str, bucket: int) -> int:
-    bucket = max(0, min(bucket, 3))
-    pair_ids = _PALETTE_PAIR_IDS.get(name) or _PALETTE_PAIR_IDS.get("soft-afterglow")
-    pair_id = pair_ids[bucket] if pair_ids and bucket < len(pair_ids) else 0
-    return curses.color_pair(pair_id)
-
-
 def _style_name(value) -> str:
     glyphs = _glyph_text(value)
     for name, preset in STYLE_PRESETS.items():
@@ -617,101 +562,6 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
             ),
         ],
     }
-
-
-def _interpolated_row_value(source: Sequence[float], screen_x: int, screen_width: int) -> float:
-    if not source:
-        return 0.0
-    grid_position = screen_x * max(0, len(source) - 1) / max(1, screen_width - 1)
-    left = int(grid_position)
-    right = min(len(source) - 1, left + 1)
-    mix = grid_position - left
-    return source[left] * (1.0 - mix) + source[right] * mix
-
-
-def _visual_shade(value: float, texture: float = 0.0) -> float:
-    return visual_shade(value, texture)
-
-
-def _semantic_color_bucket(
-    shade: float,
-    attention: float,
-    color_steps: int,
-    face: float | None = None,
-) -> int:
-    """Reserve the final palette color for a local acoustic event."""
-
-    color_steps = max(2, min(4, color_steps))
-    if shade <= 0.0:
-        return 0
-    if color_steps == 2 or attention >= 0.08:
-        return color_steps - 1
-    if face is not None:
-        # The two ordinary body colors become opposing sides of a rotating
-        # surface. The last color remains reserved for acoustic attention.
-        return max(1, min(color_steps - 2, 1 + int(clamp(face) * (color_steps - 2))))
-    return max(1, min(color_steps - 2, int(shade * (color_steps - 1))))
-
-
-def _unicode_output_supported(encoding: str | None = None) -> bool:
-    resolved = (encoding or sys.stdout.encoding or "").replace("-", "").lower()
-    return "utf8" in resolved
-
-
-def _changed_cell_runs(
-    previous: tuple[tuple[str, int], ...] | None,
-    current: tuple[tuple[str, int], ...],
-) -> list[tuple[int, str, int]]:
-    """Group only changed adjacent cells that share a terminal attribute."""
-
-    runs: list[tuple[int, str, int]] = []
-    x = 0
-    while x < len(current):
-        if previous is not None and x < len(previous) and previous[x] == current[x]:
-            x += 1
-            continue
-        start = x
-        attr = current[x][1]
-        chars = []
-        while x < len(current) and current[x][1] == attr:
-            if previous is not None and x < len(previous) and previous[x] == current[x]:
-                break
-            chars.append(current[x][0])
-            x += 1
-        runs.append((start, "".join(chars), attr))
-    return runs
-
-
-def _changed_sparse_runs(
-    previous: dict[tuple[int, int], tuple[str, int]],
-    current: dict[tuple[int, int], tuple[str, int]],
-    blank_attr: int,
-) -> list[tuple[int, int, str, int]]:
-    """Return terminal runs for the sparse union of old and new contours."""
-
-    changed = sorted(
-        position
-        for position in previous.keys() | current.keys()
-        if previous.get(position) != current.get(position)
-    )
-    runs: list[tuple[int, int, str, int]] = []
-    index = 0
-    while index < len(changed):
-        y, x = changed[index]
-        char, attr = current.get((y, x), (" ", blank_attr))
-        start = x
-        text = [char]
-        index += 1
-        while index < len(changed):
-            next_y, next_x = changed[index]
-            next_char, next_attr = current.get((next_y, next_x), (" ", blank_attr))
-            if next_y != y or next_x != x + 1 or next_attr != attr:
-                break
-            text.append(next_char)
-            x = next_x
-            index += 1
-        runs.append((y, start, "".join(text), attr))
-    return runs
 
 
 def _draw_visual(
@@ -946,6 +796,29 @@ def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: A
         stdscr.addnstr(rows - 1, 0, line, max(0, cols - 1), attr)
     except curses.error:
         pass
+
+
+# Compatibility exports for integrations which imported the original private
+# drawing helpers.  The implementations live in tui.py.
+_draw_visual = draw_visual
+_draw_dock = draw_dock
+
+
+def _draw_status(
+    stdscr: curses.window,
+    config: AppConfig,
+    ui: UiState,
+    _frame: AudioFrame,
+    field: LavaField,
+) -> None:
+    draw_status(
+        stdscr,
+        config,
+        ui,
+        field,
+        _product_preset_name_for_config(config),
+        _reactivity_name(float(getattr(config.lava, "reactivity", 1.0))),
+    )
 
 
 def _handle_action(

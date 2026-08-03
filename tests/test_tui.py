@@ -14,6 +14,8 @@ from lavatune.app import (
     _compact_layout,
     _compute_layout,
     _effective_cell_width,
+    _draw_dock,
+    _draw_visual,
     _safe_add,
     _visual_limits,
 )
@@ -27,6 +29,8 @@ from lavatune.tui import (
     compact_layout,
     compute_layout,
     effective_cell_width,
+    draw_dock,
+    draw_visual,
     safe_add,
     visual_limits,
 )
@@ -45,3 +49,5 @@ class TuiBoundaryTests(unittest.TestCase):
         self.assertIs(_compute_layout, compute_layout)
         self.assertIs(_effective_cell_width, effective_cell_width)
         self.assertIs(_visual_limits, visual_limits)
+        self.assertIs(_draw_visual, draw_visual)
+        self.assertIs(_draw_dock, draw_dock)
