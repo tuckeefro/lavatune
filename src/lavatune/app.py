@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import curses
-import math
-import os
 import select
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -34,12 +32,24 @@ from .media import MediaInfo, MediaWatcher
 from .organism import behavior_for_context
 from .runtime import LavaField, ReactionLatch, RuntimeMetrics
 from .signals import AffectiveState, AudioForces, clamp
-from .text import sanitize_display_text
+from .tui import (
+    Button,
+    COMPACT_TARGET_CELLS,
+    Control,
+    Layout,
+    UiState,
+    VisualCache,
+    clamp_visual_size as _clamp_visual_size,
+    compact_layout as _compact_layout,
+    compute_layout as _compute_layout,
+    effective_cell_width as _effective_cell_width,
+    safe_add as _safe_add,
+    visual_limits as _visual_limits,
+)
 
 TAB_NAMES = ("Listening",)
 ANALYSIS_MODES = ("atlas", "bands")
 BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
-COMPACT_TARGET_CELLS = 900
 REACTIVITY_MODES: dict[str, float] = {
     "whisper": 0.65,
     "conversational": 1.0,
@@ -181,78 +191,6 @@ PRODUCT_PRESETS: dict[str, dict[str, object]] = {
 }
 
 
-@dataclass
-class Button:
-    y1: int
-    x1: int
-    y2: int
-    x2: int
-    action: str
-    delta: int = 0
-
-    def contains(self, y: int, x: int) -> bool:
-        return self.y1 <= y <= self.y2 and self.x1 <= x <= self.x2
-
-
-@dataclass
-class Control:
-    label: str
-    value: Callable[[AppConfig], str]
-    adjust: Callable[[AppConfig, int, "UiState"], str]
-
-
-@dataclass
-class Layout:
-    vis_y: int
-    vis_x: int
-    vis_h: int
-    vis_w: int
-    dock_y: int
-    dock_x: int
-    dock_h: int
-    dock_w: int
-    side: str
-
-
-@dataclass
-class UiState:
-    dock_open: bool = False
-    tab_index: int = 0
-    selected_row: int = 0
-    status: str = ""
-    status_until: float = 0.0
-    buttons: list[Button] = field(default_factory=list)
-    restart_audio: bool = False
-    reset_lava: bool = False
-    quit_requested: bool = False
-    last_mouse: tuple[int, int] | None = None
-    last_mouse_sig: tuple[int, int, int] | None = None
-    last_mouse_at: float = 0.0
-    escape_buffer: str = ""
-    escape_started_at: float = 0.0
-    resolved_mode: str = "auto"
-    audio_status: str = "booting"
-    media: MediaInfo = field(default_factory=MediaInfo)
-    preferences_dirty: bool = False
-    preferences_due_at: float = 0.0
-
-    def set_status(self, message: str, *, ttl: float = 1.8) -> None:
-        self.status = sanitize_display_text(message, max_chars=500)
-        self.status_until = time.monotonic() + ttl
-
-    def active_status(self) -> str:
-        return self.status if time.monotonic() < self.status_until else ""
-
-
-@dataclass
-class VisualCache:
-    key: tuple[object, ...] | None = None
-    cells: dict[tuple[int, int], tuple[str, int]] = field(default_factory=dict)
-
-    def clear(self) -> None:
-        self.key = None
-        self.cells = {}
-
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return low if value < low else high if value > high else value
 
@@ -297,21 +235,6 @@ def _display_text(value) -> str:
 
 def _glyph_text(value) -> str:
     return normalize_glyph_ramp(value)
-
-
-def _safe_add(win: curses.window, y: int, x: int, text: str, attr: int = 0) -> None:
-    if y < 0 or x < 0:
-        return
-    height, width = win.getmaxyx()
-    if y >= height or x >= width:
-        return
-    limit = max(0, width - x)
-    if limit <= 0:
-        return
-    try:
-        win.addnstr(y, x, text, limit, attr)
-    except curses.error:
-        pass
 
 
 def _set_focus_reporting(enabled: bool) -> None:
@@ -531,84 +454,6 @@ def _palette_attr(name: str, bucket: int) -> int:
     pair_ids = _PALETTE_PAIR_IDS.get(name) or _PALETTE_PAIR_IDS.get("soft-afterglow")
     pair_id = pair_ids[bucket] if pair_ids and bucket < len(pair_ids) else 0
     return curses.color_pair(pair_id)
-
-
-def _env_value(name: str) -> str:
-    value = os.environ.get(f"LAVATUNE_{name}")
-    if value is not None:
-        return value
-    return os.environ.get(f"CODEXDECK_LAVATUNE_{name}", "")
-
-
-def _env_flag(name: str) -> bool:
-    value = _env_value(name)
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
-def _positive_env_int(name: str) -> int | None:
-    value = _env_value(name)
-    if not value:
-        return None
-    try:
-        number = int(value)
-    except ValueError:
-        return None
-    return number if number > 0 else None
-
-
-def _compact_layout(config: AppConfig | None) -> bool:
-    render = getattr(config, "render", None)
-    return _env_flag("COMPACT") or bool(getattr(render, "compact", False))
-
-
-def _visual_limits(config: AppConfig | None) -> tuple[int | None, int | None]:
-    render = getattr(config, "render", None)
-    width = _positive_env_int("MAX_WIDTH") or getattr(render, "max_width", None)
-    height = _positive_env_int("MAX_HEIGHT") or getattr(render, "max_height", None)
-    return width, height
-
-
-def _clamp_visual_size(width: int, height: int, config: AppConfig | None) -> tuple[int, int]:
-    max_width, max_height = _visual_limits(config)
-    if max_width:
-        width = min(width, max_width)
-    if max_height:
-        height = min(height, max_height)
-    return max(1, width), max(1, height)
-
-
-def _compute_layout(rows: int, cols: int, dock_open: bool, config: AppConfig | None = None) -> Layout:
-    # Controls are backstage: a closed dock consumes no tile area. When opened,
-    # wide terminals place it beside the organism and short terminals below it.
-    if not dock_open:
-        vis_w, vis_h = _clamp_visual_size(cols, max(1, rows - 1), config)
-        return Layout(0, 0, vis_h, vis_w, vis_h, vis_w, 0, 0, "hidden")
-
-    side_layout = cols >= 96
-    if side_layout:
-        dock_w = min(38, max(1, cols - 1))
-        vis_h = max(1, rows - 1)
-        vis_w = max(1, cols - dock_w)
-        vis_w, vis_h = _clamp_visual_size(vis_w, vis_h, config)
-        return Layout(0, 0, vis_h, vis_w, 0, vis_w, vis_h, dock_w, "right")
-    requested_dock_h = 12 if rows >= 16 else 1
-    dock_h = min(requested_dock_h, max(1, rows - 2))
-    vis_h = max(1, rows - dock_h - 1)
-    vis_w, vis_h = _clamp_visual_size(cols, vis_h, config)
-    return Layout(0, 0, vis_h, vis_w, vis_h, 0, dock_h, vis_w, "bottom")
-
-
-def _effective_cell_width(config: AppConfig, width: int, height: int) -> int:
-    configured = max(1, int(getattr(config.render, "scale", 1)))
-    if not _compact_layout(config):
-        return configured
-
-    # Compact mode budgets simulated cells by area. A tiny i3 tile therefore
-    # gains detail while a large tile avoids an unnecessary CPU/output spike.
-    target_cells = _positive_env_int("TARGET_CELLS") or COMPACT_TARGET_CELLS
-    target_cells = max(180, min(1400, target_cells))
-    adaptive = max(1, math.ceil((max(1, width) * max(1, height)) / target_cells))
-    return max(1, min(5, adaptive))
 
 
 def _style_name(value) -> str:
