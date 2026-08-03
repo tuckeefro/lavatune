@@ -38,6 +38,8 @@ git switch main
 git pull --ff-only
 git tag -a v0.0.2a -m "Lavatune 0.0.2a"
 git push origin v0.0.2a
+
+Note: pre-release wheels and sdists normalize the public tag suffix to `a0` in filenames (`0.0.2a0`), while the package tag remains `v0.0.2a`.
 ```
 
 `.github/workflows/release.yml` then:

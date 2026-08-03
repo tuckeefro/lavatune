@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import email.parser
+import re
 import sys
 import tarfile
 import zipfile
@@ -43,6 +44,16 @@ def read_version(path: Path) -> str:
             if isinstance(value, str):
                 return value
     raise ValueError(f"No literal __version__ assignment found in {path}")
+
+
+def _normalized_distribution_version(version: str) -> str:
+    match = re.fullmatch(r"(.+?)(a|b|rc)(\d*)$", version)
+    if not match:
+        return version
+    base, pre_tag, pre_number = match.groups()
+    if pre_number:
+        return version
+    return f"{base}{pre_tag}0"
 
 
 def _contaminated(name: str) -> bool:
@@ -93,11 +104,12 @@ def main() -> int:
     args = parser.parse_args()
     version_file = Path(__file__).parents[1] / "src" / "lavatune" / "__init__.py"
     version = read_version(version_file)
+    distribution_version = _normalized_distribution_version(version)
 
     wheels = sorted(args.directory.glob("lavatune-*.whl"))
     sdists = sorted(args.directory.glob("lavatune-*.tar.gz"))
-    expected_wheel = args.directory / f"lavatune-{version}-py3-none-any.whl"
-    expected_sdist = args.directory / f"lavatune-{version}.tar.gz"
+    expected_wheel = args.directory / f"lavatune-{distribution_version}-py3-none-any.whl"
+    expected_sdist = args.directory / f"lavatune-{distribution_version}.tar.gz"
     errors: list[str] = []
     if expected_wheel not in wheels:
         errors.append(f"missing {expected_wheel.name}")
@@ -106,13 +118,15 @@ def main() -> int:
     if expected_sdist.exists():
         errors.extend(verify_sdist(expected_sdist))
     if expected_wheel.exists():
-        errors.extend(verify_wheel(expected_wheel, version))
+        errors.extend(verify_wheel(expected_wheel, distribution_version))
     if errors:
         print("Distribution verification failed:", file=sys.stderr)
         for error in errors:
             print(f"- {error}", file=sys.stderr)
         return 1
     print(f"Verified {expected_sdist.name} and {expected_wheel.name}")
+    if distribution_version != version:
+        print(f"Normalized pre-release version: {version} -> {distribution_version}")
     return 0
 
 
