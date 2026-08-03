@@ -14,7 +14,7 @@ from .organism import AudioForces, Body, behavior_for_context, clamp
 from .presentation import PresentationFrame
 
 if TYPE_CHECKING:
-    from .app import LavaField
+    from .runtime import LavaField
 
 
 CANVAS_WIDTH = 960
@@ -197,7 +197,7 @@ class CanvasCompanion:
                 "--canvas requires GTK 3 with PyGObject (python3-gi)."
             ) from exc
 
-        from .app import LavaField
+        from .runtime import LavaField
 
         self.field = LavaField()
         self.field.resize(96, 54)

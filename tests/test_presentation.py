@@ -4,9 +4,13 @@ import unittest
 
 from lavatune.app import LavaField
 from lavatune.organism import AudioForces
+from lavatune.runtime import LavaField as RuntimeLavaField
 
 
 class PresentationFrameTests(unittest.TestCase):
+    def test_app_reexports_the_renderer_neutral_runtime_field(self) -> None:
+        self.assertIs(LavaField, RuntimeLavaField)
+
     def test_lava_field_exposes_the_live_organism_world_as_one_read_only_frame(self) -> None:
         field = LavaField()
         field.resize(80, 24)
