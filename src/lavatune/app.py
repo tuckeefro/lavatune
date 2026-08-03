@@ -31,13 +31,9 @@ from .materials import (
     visual_shade,
 )
 from .media import MediaInfo, MediaWatcher
-from .organism import (
-    AffectiveState,
-    AudioForces,
-    behavior_for_context,
-    clamp,
-)
+from .organism import behavior_for_context
 from .runtime import LavaField, ReactionLatch, RuntimeMetrics
+from .signals import AffectiveState, AudioForces, clamp
 from .text import sanitize_display_text
 
 TAB_NAMES = ("Listening",)

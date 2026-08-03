@@ -38,7 +38,7 @@ Measured on the same machine at 120 by 30 terminal cells over 120 synthetic fram
 | Render path | Milliseconds/frame |
 | --- | ---: |
 | Alpha scalar field + Fluid | 43.089 |
-| Analytic contour Fluid with surface-wave memory | 7.6–9.6 |
+| Analytic contour Fluid with surface-wave memory | 7.6–10.5 |
 | Unchanged cached contour | 0.011 |
 | Prepared-row Text | 21.550 |
 

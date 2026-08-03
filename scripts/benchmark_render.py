@@ -9,7 +9,7 @@ import platform
 import time
 
 from benchmark import synthetic_frame
-from lavatune.app import LavaField
+from lavatune.runtime import LavaField
 from lavatune.canvas import CANVAS_HEIGHT, CANVAS_WIDTH, project_organisms
 from lavatune.config import LavaConfig
 from lavatune.materials import (

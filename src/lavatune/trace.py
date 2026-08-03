@@ -10,12 +10,11 @@ from typing import Callable
 
 from .audio import AudioCapture, AudioFrame
 from .config import AppConfig
-from .organism import (
+from .organism import apply_behavior_profile, behavior_for_context
+from .signals import (
     AffectiveTracker,
     AudioForceMapper,
     NarrativeTracker,
-    apply_behavior_profile,
-    behavior_for_context,
 )
 
 

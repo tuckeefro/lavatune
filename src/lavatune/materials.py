@@ -6,7 +6,8 @@ import math
 import unicodedata
 from dataclasses import dataclass
 
-from .organism import AudioForces, Body, FieldFrame, clamp, tile_axis_scales
+from .organism import Body, FieldFrame, tile_axis_scales
+from .signals import AudioForces, clamp
 from .wax import WAX_HEIGHT, WAX_WIDTH, WaxState
 
 

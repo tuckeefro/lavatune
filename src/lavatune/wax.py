@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from .organism import AudioForces, NarrativeState, clamp, lerp
+from .signals import AudioForces, NarrativeState, clamp, lerp
 
 
 WAX_WIDTH = 64

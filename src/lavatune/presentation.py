@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .organism import AffectiveState, AudioForces, Body, NarrativeState
+from .organism import Body
+from .signals import AffectiveState, AudioForces, NarrativeState
 
 
 @dataclass(frozen=True, slots=True)

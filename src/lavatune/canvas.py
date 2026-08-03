@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING
 
 from .audio import AudioCapture, AudioFrame, DemoAudioCapture
 from .config import AppConfig
-from .organism import AudioForces, Body, behavior_for_context, clamp
+from .organism import Body, behavior_for_context
 from .presentation import PresentationFrame
+from .signals import AudioForces, clamp
 
 if TYPE_CHECKING:
     from .runtime import LavaField
