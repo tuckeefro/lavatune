@@ -60,6 +60,48 @@ from .tui import (
     visual_limits as _visual_limits,
 )
 
+# Keep the original module-level imports available to integrations while the
+# implementations themselves now live behind focused runtime and TUI modules.
+__all__ = [
+    "AFTERGLOW_NAMES",
+    "Button",
+    "COMPACT_TARGET_CELLS",
+    "CONTENT_MODES",
+    "Control",
+    "DAILY_PALETTES",
+    "EDGE_NAMES",
+    "Layout",
+    "LavaField",
+    "MATERIAL_NAMES",
+    "PALETTE_FALLBACKS",
+    "PALETTES",
+    "PROFILE_NAMES",
+    "ReactionLatch",
+    "RuntimeMetrics",
+    "TAB_NAMES",
+    "UiState",
+    "VisualCache",
+    "WEIGHT_NAMES",
+    "_changed_cell_runs",
+    "_changed_sparse_runs",
+    "_clamp_visual_size",
+    "_compact_layout",
+    "_compute_layout",
+    "_draw_dock",
+    "_draw_status",
+    "_draw_visual",
+    "_effective_cell_width",
+    "_init_colors",
+    "_interpolated_row_value",
+    "_palette_attr",
+    "_palette_name",
+    "_safe_add",
+    "_semantic_color_bucket",
+    "_unicode_output_supported",
+    "_visual_limits",
+    "_visual_shade",
+]
+
 ANALYSIS_MODES = ("atlas", "bands")
 BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
 REACTIVITY_MODES: dict[str, float] = {

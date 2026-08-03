@@ -50,6 +50,10 @@ PALETTE_FALLBACKS: dict[str, tuple[int, ...]] = {
 _PALETTE_PAIR_IDS: dict[str, tuple[int, ...]] = {}
 DEFAULT_GLYPHS = " .,:;~oO@"
 
+# ``visual_shade`` remains part of the historical app-level presentation API.
+# Re-export it here with the terminal presentation helpers that use its scale.
+__all__ = ["visual_shade"]
+
 
 @dataclass
 class Button:
