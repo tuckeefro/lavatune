@@ -112,6 +112,26 @@ class AudioProcessTests(unittest.TestCase):
 
         self.assertEqual(command[command.index("--target") + 1], source)
 
+    def test_microphone_route_uses_the_backend_default_input(self) -> None:
+        cases = {
+            "pipewire": "@DEFAULT_AUDIO_SOURCE@",
+            "pulse": "@DEFAULT_SOURCE@",
+            "ffmpeg": "default",
+        }
+        for backend, expected in cases.items():
+            with self.subTest(backend=backend):
+                capture = AudioCapture.__new__(AudioCapture)
+                capture.backend = backend
+                capture.config = AudioConfig(capture_route="microphone")
+                self.assertEqual(capture._resolve_source(None), expected)
+
+    def test_explicit_source_overrides_microphone_route(self) -> None:
+        capture = AudioCapture.__new__(AudioCapture)
+        capture.backend = "pipewire"
+        capture.config = AudioConfig(capture_route="microphone")
+
+        self.assertEqual(capture._resolve_source("my-input"), "my-input")
+
     def test_backend_status_and_diagnostics_are_sanitized(self) -> None:
         capture = capture_shell(source="monitor\x1b]0;spoof\x07")
         capture._stderr_tail.extend(b"failed\x1b]0;spoof\x07")

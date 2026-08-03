@@ -16,6 +16,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(config.theme, DEFAULT_THEME)
         self.assertFalse(config.render.show_stats)
+        self.assertEqual(config.render.renderer, "tui")
 
     def test_warm_braille_theme_name_remains_compatible(self) -> None:
         self.assertEqual(load_config(None, "warm-braille").theme, DEFAULT_THEME)
@@ -34,6 +35,7 @@ class ConfigTests(unittest.TestCase):
             path = Path(directory) / "nested" / "preferences.json"
             config = load_config(None, None)
             config.render.material = "fluid"
+            config.render.renderer = "canvas"
             config.render.weight = "full"
             config.render.edge = "defined"
             config.render.afterglow = "quiet"
@@ -43,6 +45,7 @@ class ConfigTests(unittest.TestCase):
             restored = load_config(None, None, saved_preferences=path)
 
             self.assertEqual(restored.render.material, "fluid")
+            self.assertEqual(restored.render.renderer, "canvas")
             self.assertEqual(restored.render.weight, "full")
             self.assertEqual(restored.render.edge, "defined")
             self.assertEqual(restored.render.afterglow, "quiet")
@@ -83,11 +86,21 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.render.material, "text")
             self.assertEqual(loaded.render.glyphs, " .xX")
 
+    def test_legacy_content_mode_migrates_to_a_listening_context(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.toml"
+            path.write_text('content_mode = "speech"\n')
+
+            loaded = load_config(str(path), None)
+
+            self.assertEqual(loaded.listening_context, "podcast")
+            self.assertEqual(loaded.audio.capture_route, "system")
+
     def test_dock_adjustment_debounces_into_saved_preferences(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "preferences.json"
             config = load_config(None, None)
-            ui = UiState(tab_index=1)
+            ui = UiState()
             controls = _make_controls(config)
 
             _handle_action("adjust:0", 1, config, ui, controls)
@@ -96,7 +109,7 @@ class ConfigTests(unittest.TestCase):
             restored = load_config(None, None, saved_preferences=destination)
 
             self.assertFalse(ui.preferences_dirty)
-            self.assertEqual(restored.render.material, "fluid")
+            self.assertEqual(restored.listening_context, "microphone")
 
     def test_explicit_config_mode_disables_preference_writes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

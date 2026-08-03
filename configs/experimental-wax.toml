@@ -1,0 +1,19 @@
+# Opt-in fixed-lattice terminal lava lamp. Fluid remains the default and
+# experimental Volume remains the separate thermal-organism path.
+listening_context = "music"
+profile = "responsive"
+
+[render]
+material = "wax"
+palette = "oxide"
+color_steps = 4
+edge = "defined"
+
+[lava]
+# Only existing capture/phrase controls feed the fixed wax vessel.
+blobs = 4
+reactivity = 1.5
+drift = 0.30
+viscosity = 0.92
+radius_min = 0.09
+radius_max = 0.22

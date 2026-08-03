@@ -15,19 +15,23 @@ import tomllib
 BACKEND_NAMES = ("auto", "pipewire", "pulse", "ffmpeg")
 PROFILE_NAMES = ("power-save", "atlas", "responsive")
 CONTENT_MODES = ("auto", "music", "speech", "book")
-MATERIAL_NAMES = ("text", "fluid")
+LISTENING_CONTEXTS = ("podcast", "radio", "music", "microphone")
+CAPTURE_ROUTES = ("system", "microphone")
+MATERIAL_NAMES = ("text", "fluid", "volume", "wax")
+RENDERER_NAMES = ("tui", "canvas")
 WEIGHT_NAMES = ("airy", "balanced", "full")
 EDGE_NAMES = ("soft", "defined")
 AFTERGLOW_NAMES = ("quiet", "present")
 DEFAULT_THEME = "soft-afterglow"
 THEME_ALIASES = {"warm-braille": DEFAULT_THEME}
-PREFERENCE_SCHEMA = 1
+PREFERENCE_SCHEMA = 3
 
 
 @dataclass(slots=True)
 class AudioConfig:
     backend: str = "auto"
     source: str | None = None
+    capture_route: str = "system"
     analysis: str = "atlas"
     sample_rate: int = 22050
     channels: int = 1
@@ -38,7 +42,8 @@ class AudioConfig:
 class RenderConfig:
     glyphs: str = " .,:;~oO@"
     palette: list[str] | str | None = "soft-afterglow"
-    material: str = "text"
+    material: str = "fluid"
+    renderer: str = "tui"
     weight: str = "balanced"
     edge: str = "soft"
     afterglow: str = "present"
@@ -67,6 +72,7 @@ class AppConfig:
     theme: str = DEFAULT_THEME
     profile: str = "atlas"
     content_mode: str = "auto"
+    listening_context: str = "music"
     audio: AudioConfig = field(default_factory=AudioConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
     lava: LavaConfig = field(default_factory=LavaConfig)
@@ -122,9 +128,10 @@ def _preference_payload(config: AppConfig) -> dict[str, Any]:
         "schema": PREFERENCE_SCHEMA,
         "fps": config.fps,
         "profile": config.profile,
-        "content_mode": config.content_mode,
+        "listening_context": config.listening_context,
         "audio": {
             "backend": config.audio.backend,
+            "capture_route": config.audio.capture_route,
             "analysis": config.audio.analysis,
             "sample_rate": config.audio.sample_rate,
             "frame_size": config.audio.frame_size,
@@ -132,6 +139,7 @@ def _preference_payload(config: AppConfig) -> dict[str, Any]:
         "render": {
             "palette": config.render.palette,
             "material": config.render.material,
+            "renderer": config.render.renderer,
             "weight": config.render.weight,
             "edge": config.render.edge,
             "afterglow": config.render.afterglow,
@@ -180,7 +188,27 @@ def _apply_saved_preferences(config: AppConfig, path: Path) -> AppConfig:
     if path.stat().st_size > 65536:
         raise ValueError(f"Preferences file is too large: {path}")
     raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or raw.get("schema") != PREFERENCE_SCHEMA:
+    if not isinstance(raw, dict):
+        raise ValueError(f"Unsupported preferences schema in {path}")
+    schema = raw.get("schema")
+    if schema == 1:
+        legacy_content = raw.pop("content_mode", "auto")
+        raw["listening_context"] = {
+            "music": "music",
+            "speech": "podcast",
+            "book": "podcast",
+            "auto": "radio",
+        }.get(legacy_content, "music")
+        audio = raw.get("audio")
+        if isinstance(audio, dict):
+            audio["capture_route"] = "system"
+        raw["schema"] = 2
+    if raw.get("schema") == 2:
+        render = raw.get("render")
+        if isinstance(render, dict):
+            render.setdefault("renderer", "tui")
+        raw["schema"] = PREFERENCE_SCHEMA
+    if raw.get("schema") != PREFERENCE_SCHEMA:
         raise ValueError(f"Unsupported preferences schema in {path}")
     overrides = {key: value for key, value in raw.items() if key != "schema"}
     return _merge_dataclass(config, overrides)
@@ -191,12 +219,26 @@ def _normalize_config(config: AppConfig) -> AppConfig:
     render = replace(
         render,
         material=render.material if render.material in MATERIAL_NAMES else "text",
+        renderer=render.renderer if render.renderer in RENDERER_NAMES else "tui",
         weight=render.weight if render.weight in WEIGHT_NAMES else "balanced",
         edge=render.edge if render.edge in EDGE_NAMES else "soft",
         afterglow=render.afterglow if render.afterglow in AFTERGLOW_NAMES else "present",
         cell_aspect=max(1.0, min(3.0, float(render.cell_aspect))),
     )
-    return replace(config, render=render)
+    context = (
+        config.listening_context
+        if config.listening_context in LISTENING_CONTEXTS
+        else "music"
+    )
+    route = "microphone" if context == "microphone" else "system"
+    if config.audio.capture_route not in CAPTURE_ROUTES:
+        route = "system"
+    return replace(
+        config,
+        listening_context=context,
+        audio=replace(config.audio, capture_route=route),
+        render=render,
+    )
 
 
 def apply_profile(config: AppConfig, profile_name: str | None) -> AppConfig:
@@ -278,6 +320,7 @@ def apply_cli_overrides(
     config: AppConfig,
     *,
     backend_name: str | None = None,
+    renderer_name: str | None = None,
     source: str | None = None,
     show_stats: bool = False,
     hide_stats: bool = False,
@@ -293,7 +336,14 @@ def apply_cli_overrides(
             backend=backend_name or config.audio.backend,
             source=source if source is not None else config.audio.source,
         )
-    if show_stats or hide_stats or compact_tile or max_visual_width or max_visual_height:
+    if (
+        renderer_name is not None
+        or show_stats
+        or hide_stats
+        or compact_tile
+        or max_visual_width
+        or max_visual_height
+    ):
         next_show_stats = render.show_stats
         if show_stats:
             next_show_stats = True
@@ -301,6 +351,7 @@ def apply_cli_overrides(
             next_show_stats = False
         render = replace(
             render,
+            renderer=renderer_name or render.renderer,
             show_stats=next_show_stats,
             compact=compact_tile or render.compact,
             scale=render.scale,
@@ -331,6 +382,18 @@ def load_config(
         raw = tomllib.loads(Path(config_path).read_text())
         if not isinstance(raw, dict):
             raise ValueError("Config root must be a table")
+        # A glyph override predates material selection. Preserve its historical
+        # text semantics instead of silently turning it into a volume preset.
+        render_override = raw.get("render")
+        if isinstance(render_override, dict) and "glyphs" in render_override and "material" not in render_override:
+            render_override["material"] = "text"
+        if "listening_context" not in raw and isinstance(raw.get("content_mode"), str):
+            raw["listening_context"] = {
+                "music": "music",
+                "speech": "podcast",
+                "book": "podcast",
+                "auto": "radio",
+            }.get(raw["content_mode"], "music")
         config = _merge_dataclass(config, raw)
 
     return _normalize_config(apply_profile(config, profile_name or config.profile))

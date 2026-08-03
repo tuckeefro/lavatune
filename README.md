@@ -24,7 +24,7 @@ The current implementation targets Linux. A lightweight native macOS sibling is 
 - carries weight, agitation, tension, intimacy, and release as an embodied acoustic posture
 - adapts its 2-14 FPS cadence to acoustic activity and redraws only occupied contour changes
 - displays optional local MPRIS media metadata
-- includes canonical listening, music, speech, and low-power operating modes
+- offers four listening contexts: Podcast, Radio, Music, and Microphone
 - supports keyboard and mouse controls through Python `curses`
 - includes a synthetic demo that needs no audio device
 - performs no network access, telemetry, recording, or plugin loading
@@ -89,15 +89,11 @@ lavatune --list-themes
 
 The organism starts without configuration on screen. Press `Tab` to bring the control dock in or send it backstage again, and `q` to quit. Mouse clicks, the mouse wheel, and arrow keys adjust the selected control while the dock is open.
 
-The three dock tabs are:
+The dock has one daily choice: `Listening`. Choose `Podcast`, `Radio`, `Music`, or `Microphone`; it selects how the same acoustic facts become physical behavior. Podcast, Radio, and Music use system output. Microphone uses the local default input, shows an active capture state, and does not poll media metadata. Backend, source override, FPS, and diagnostic options remain available through configuration and the doctor command.
 
-- `Modes`: operating mode, reactivity, and source type
-- `Look`: material, visual weight, edge definition, afterglow, and palette
-- `System`: power profile, frame size, FPS, analysis, backend, and diagnostics
+`Text` uses a validated one-column glyph ramp. `Fluid` draws analytic body contours directly from the organism, using quarter cells for curved boundaries and solid blocks for connected cores. Its short audio attacks enter a bounded, decaying perimeter wave and terminal-edge memory, so the surface ripples through cells rather than popping between them. The default remains CPU-bounded Fluid. The experimental `volume` material projects asymmetric rotating volumes with depth-tested surfaces and palette-facing colors. Its thermal-wax mode compresses authored role lanes into one central vessel and uses only per-body heat, buoyancy, viscosity, low-pass shape memory, and fixed pairwise adhesion: sustained pressure warms and lifts bodies, while at most one nearby warm pair briefly lends its existing lobes toward one another as a soft bridge. Other cores keep their normal separation, so the cluster stays countable.
 
-Reactivity personalities are `whisper`, `conversational`, and `electric`. The default uses buoyant motion, `soft-afterglow`, and conversational reactivity.
-
-`Text` uses a validated one-column glyph ramp. `Fluid` draws analytic body contours directly from the organism, using quarter cells for curved boundaries and solid blocks for connected cores. It skips the full scalar-field raster used by Text, preserves the terminal's real background, and falls back to Text when UTF-8 output is unavailable. Look controls affect presentation only; switching them does not reset bodies, audio calibration, momentum, or pressure memory.
+Experimental `wax` is the true lava-lamp route: a fixed 64×32 density, heat, and flow lattice can merge into one continuous mass and later pinch back into separate return lobes. It does not allocate at terminal resolution; it projects only its occupied simulation bounds through the same solid quadrant glyphs. Wax is opt-in because its fixed simulation costs more than Fluid. Text, Fluid, Volume, and Wax preserve the terminal's real background and fall back to Text when UTF-8 output is unavailable.
 
 ## Audio behavior
 
@@ -108,7 +104,13 @@ Lavatune analyzes a monitor stream from the Linux audio stack. It does not save 
 
 The first four bodies have stable roles: a large bass-sensitive ballast, a voice-oriented listener, a small detail-sensitive glint, and a neutral drifter. Lows move mass and create wall pressure, midrange circulates bodies, and highs texture their edges. Tempo changes the whole vessel while each body breathes, stretches, and turns on its own phase. Rapid repeated attacks add bounded flutter and circulation pressure without being mistaken for the main beat. Restrained passages establish a saturating readiness, so a confirmed snap can break the group open without growing larger simply because the calm lasted longer. Predictable motion builds expectation, giving interruption and resolution more physical consequence when context supports them. A transient can create physical impact and decaying afterglow, but a body forms a directional spike only when its listening band rises meaningfully above a recent rolling average. These relationships are intentionally elastic rather than frame-perfect synchronization, and Lavatune never assigns a named emotion to what it hears.
 
-The subjective behavior and review criteria are recorded in [`docs/DESIGN.md`](docs/DESIGN.md).
+In `Radio`, one stable body becomes the voice carrier. Existing voice/mid energy drives its breath-like expansion and forward posture; fast detail creates only a small local consonant flick; a pause becomes a visible release. The other active bodies orient and drift toward it as listeners. A timbral handoff must remain credible for several seconds before the speaker changes, so the cast never swaps roles every syllable. This uses bounded acoustic envelopes only—no transcription or speaker identification.
+
+The subjective behavior and review criteria are recorded in [`docs/DESIGN.md`](docs/DESIGN.md). Experimental Volume also uses local phrase memory: repeated cadence and sustained low-tone pressure can accumulate a held posture; an unexpected break can fracture it; sparse quiet after that break becomes an aftermath rather than an immediate reset. A credible break can leave different bounded residue in each organism; it only softens after a new, audible stable pattern—not merely because the song goes quiet. This is an audible-structure response, not a claim to know a song's meaning or the listener's feelings.
+
+For a one-time calibration pass, `--trace-once SECONDS` captures the existing feature values from live system audio and then exits; it neither records PCM nor alters normal startup. It writes a temporary JSON trace to `/tmp/lavatune-trace.json` by default, which can be removed after review.
+
+The terminal-native TUI is the default presentation renderer. For an opt-in pixel companion view, add `--renderer canvas` (the older `--canvas` alias still works). It needs the local GTK 3/PyGObject runtime and reuses the exact same audio analysis, phrase state, and organism physics through one renderer-neutral presentation frame. It draws at native window resolution with four organisms and two fixed local surfaces each; it does not use GPU shaders or a full-screen scalar field. Canvas is experimental; terminal mode remains the portable product.
 
 If automatic source selection fails, inspect sources with `wpctl status` or `pactl list short sources`, then pass the source with `--source`.
 
@@ -125,6 +127,13 @@ An example TOML override lives at [`configs/soft-afterglow.toml`](configs/soft-a
 ```bash
 lavatune --config configs/soft-afterglow.toml
 ```
+
+For the experimental lava lamp, use [`configs/experimental-wax.toml`](configs/experimental-wax.toml):
+
+```bash
+lavatune --config configs/experimental-wax.toml
+```
+
 
 The compact tile integration accepts these environment variables:
 

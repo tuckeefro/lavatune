@@ -38,16 +38,22 @@ from .organism import (
     AffectiveTracker,
     AudioForceMapper,
     AudioForces,
+    BehaviorProfile,
     Body,
     FieldFrame,
     NarrativeState,
     NarrativeTracker,
     OrganismFieldRenderer,
     TileComposition,
+    apply_behavior_profile,
+    behavior_for_context,
+    clamp,
 )
+from .presentation import PresentationFrame
 from .text import sanitize_display_text
+from .wax import WaxState
 
-TAB_NAMES = ("Modes", "Look", "System")
+TAB_NAMES = ("Listening",)
 ANALYSIS_MODES = ("atlas", "bands")
 BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
 COMPACT_TARGET_CELLS = 900
@@ -366,6 +372,7 @@ class LavaField:
         self.affect_tracker = AffectiveTracker()
         self.narrative_tracker = NarrativeTracker()
         self.organism = AcousticOrganism()
+        self.wax = WaxState()
         self.renderer = OrganismFieldRenderer()
         self.forces = AudioForces()
         self.render_forces = AudioForces()
@@ -387,6 +394,17 @@ class LavaField:
     @property
     def composition(self) -> TileComposition:
         return self.organism.composition
+
+    def presentation_frame(self) -> PresentationFrame:
+        """Expose simulation state to a renderer without duplicating physics."""
+
+        return PresentationFrame(
+            bodies=tuple(self.organism.bodies),
+            forces=self.render_forces,
+            affect=self.affect,
+            narrative=self.narrative,
+            phase=self.phase,
+        )
 
     @property
     def buffers(self) -> list[list[float]]:
@@ -458,6 +476,7 @@ class LavaField:
         self.affect_tracker.reset()
         self.narrative_tracker.reset()
         self.organism.reset(capacity)
+        self.wax.reset()
         self.organism.seed_for_tile(self.w, self.h, capacity)
         self.forces = AudioForces()
         self.render_forces = AudioForces()
@@ -471,14 +490,27 @@ class LavaField:
         self.frames_seen = 0
         self.field_frame = FieldFrame.empty(self.w, self.h)
 
-    def observe(self, frame: AudioFrame, mode: str, reactivity: float) -> bool:
+    def observe(
+        self,
+        frame: AudioFrame,
+        mode: str,
+        reactivity: float,
+        behavior: BehaviorProfile | None = None,
+    ) -> bool:
         """Map each new capture frame even when the display is between draws."""
 
-        key = (float(frame.timestamp), mode, round(reactivity, 4))
+        key = (
+            float(frame.timestamp),
+            mode,
+            behavior.name if behavior is not None else "",
+            round(reactivity, 4),
+        )
         if frame.timestamp > 0.0 and key == self._last_audio_key:
             return False
         started = time.perf_counter()
         self.forces = self.mapper.map(frame, mode, reactivity)
+        if behavior is not None:
+            self.forces = apply_behavior_profile(self.forces, behavior)
         self.metrics.map_seconds += time.perf_counter() - started
         started = time.perf_counter()
         self.affect = self.affect_tracker.update(self.forces, float(frame.timestamp))
@@ -504,10 +536,14 @@ class LavaField:
         cell_aspect: float = 1.85,
         rasterize: bool = True,
         advance_physics: bool = True,
+        behavior: BehaviorProfile | None = None,
+        embody_posture: bool = False,
+        embody_wax: bool = False,
+        surface_ripples: bool = False,
     ) -> None:
         if self.w <= 0 or self.h <= 0:
             return
-        self.observe(frame, mode, reactivity)
+        self.observe(frame, mode, reactivity, behavior)
         self.render_forces = self.reactions.consume(self.forces)
         if advance_physics:
             now = time.monotonic()
@@ -534,7 +570,17 @@ class LavaField:
                     cell_aspect,
                     self.affect,
                     self.narrative,
+                    behavior,
+                    embody_posture,
+                    surface_ripples,
                 )
+                if embody_wax:
+                    self.wax.advance(
+                        dt,
+                        self.render_forces,
+                        self.narrative,
+                        behavior.name if behavior is not None else mode,
+                    )
             self.metrics.physics_steps += substeps
             self.metrics.physics_seconds += time.perf_counter() - physics_started
         if rasterize:
@@ -789,9 +835,15 @@ def _wait_for_activity(
 
 
 def _init_colors() -> None:
-    curses.start_color()
-    curses.use_default_colors()
     _PALETTE_PAIR_IDS.clear()
+    try:
+        curses.start_color()
+        curses.use_default_colors()
+    except curses.error:
+        _PALETTE_PAIR_IDS.update(
+            {name: (0,) * len(palette) for name, palette in PALETTES.items()}
+        )
+        return
     pair_index = 1
     available_colors = max(0, getattr(curses, "COLORS", 0))
     pair_limit = max(1, getattr(curses, "COLOR_PAIRS", 0))
@@ -810,8 +862,12 @@ def _init_colors() -> None:
             resolved = fg if 0 <= fg < available_colors else fallback[bucket]
             if not 0 <= resolved < available_colors:
                 resolved = min(curses.COLOR_WHITE, available_colors - 1)
-            curses.init_pair(pair_index, resolved, -1)
-            pair_ids.append(pair_index)
+            try:
+                curses.init_pair(pair_index, resolved, -1)
+            except curses.error:
+                pair_ids.append(0)
+            else:
+                pair_ids.append(pair_index)
             pair_index += 1
         _PALETTE_PAIR_IDS[name] = tuple(pair_ids)
 
@@ -971,6 +1027,16 @@ def _apply_product_preset(config: AppConfig, preset_name: str) -> None:
     _set_density(config, str(preset["density"]))
 
 
+def _set_listening_context(config: AppConfig, context: str) -> None:
+    """Apply the only daily choice; analysis remains a shared raw signal."""
+
+    if context not in {"podcast", "radio", "music", "microphone"}:
+        context = "music"
+    config.listening_context = context
+    config.content_mode = "music"
+    config.audio.capture_route = "microphone" if context == "microphone" else "system"
+
+
 def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
     preset_state = {"name": _product_preset_name_for_config(config)}
 
@@ -1042,108 +1108,13 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
         refresh_states(config)
 
     return {
-        "Modes": [
+        "Listening": [
             choice_control(
-                "mode",
-                lambda c: preset_state["name"],
-                set_preset,
-                tuple(PRODUCT_PRESETS.keys()),
+                "listening",
+                lambda c: getattr(c, "listening_context", "music"),
+                _set_listening_context,
+                ("podcast", "radio", "music", "microphone"),
                 restart_audio=True,
-            ),
-            choice_control(
-                "react",
-                lambda c: _reactivity_name(float(getattr(c.lava, "reactivity", 1.0))),
-                _set_reactivity,
-                tuple(REACTIVITY_MODES.keys()),
-                on_change=mark_state,
-            ),
-            choice_control(
-                "source",
-                lambda c: getattr(c, "content_mode", "auto"),
-                lambda c, v: setattr(c, "content_mode", v),
-                CONTENT_MODES,
-                on_change=mark_state,
-            ),
-        ],
-        "Look": [
-            choice_control(
-                "material",
-                lambda c: getattr(c.render, "material", "text"),
-                lambda c, v: setattr(c.render, "material", v),
-                MATERIAL_NAMES,
-            ),
-            choice_control(
-                "weight",
-                lambda c: getattr(c.render, "weight", "balanced"),
-                lambda c, v: setattr(c.render, "weight", v),
-                WEIGHT_NAMES,
-            ),
-            choice_control(
-                "edge",
-                lambda c: getattr(c.render, "edge", "soft"),
-                lambda c, v: setattr(c.render, "edge", v),
-                EDGE_NAMES,
-            ),
-            choice_control(
-                "afterglow",
-                lambda c: getattr(c.render, "afterglow", "present"),
-                lambda c, v: setattr(c.render, "afterglow", v),
-                AFTERGLOW_NAMES,
-            ),
-            choice_control(
-                "palette",
-                lambda c: _palette_name(getattr(c.render, "palette", "soft-afterglow")),
-                lambda c, v: setattr(c.render, "palette", _palette_name(v)),
-                DAILY_PALETTES,
-                on_change=mark_state,
-            ),
-        ],
-        "System": [
-            choice_control(
-                "profile",
-                lambda c: getattr(c, "profile", "atlas"),
-                lambda c, v: setattr(c, "profile", v),
-                PROFILE_NAMES,
-                restart_audio=True,
-                on_change=lambda c, v: (_apply_profile_in_place(c, v), mark_state(c, v)),
-            ),
-            int_control(
-                "frame",
-                lambda c: int(getattr(c.audio, "frame_size", 1024)),
-                lambda c, v: setattr(c.audio, "frame_size", v),
-                low=256,
-                high=4096,
-                step=256,
-                restart_audio=True,
-            ),
-            int_control(
-                "fps",
-                lambda c: int(getattr(c, "fps", 24)),
-                lambda c, v: setattr(c, "fps", v),
-                low=8,
-                high=60,
-                step=2,
-                on_change=mark_state,
-            ),
-            choice_control(
-                "analysis",
-                lambda c: getattr(c.audio, "analysis", "atlas"),
-                lambda c, v: setattr(c.audio, "analysis", v),
-                ANALYSIS_MODES,
-                restart_audio=True,
-                on_change=mark_state,
-            ),
-            choice_control(
-                "backend",
-                lambda c: getattr(c.audio, "backend", "auto"),
-                lambda c, v: setattr(c.audio, "backend", v),
-                BACKEND_MODES,
-                restart_audio=True,
-            ),
-            bool_control(
-                "stats",
-                lambda c: bool(getattr(c.render, "show_stats", True)),
-                lambda c, v: setattr(c.render, "show_stats", v),
             ),
         ],
     }
@@ -1163,7 +1134,12 @@ def _visual_shade(value: float, texture: float = 0.0) -> float:
     return visual_shade(value, texture)
 
 
-def _semantic_color_bucket(shade: float, attention: float, color_steps: int) -> int:
+def _semantic_color_bucket(
+    shade: float,
+    attention: float,
+    color_steps: int,
+    face: float | None = None,
+) -> int:
     """Reserve the final palette color for a local acoustic event."""
 
     color_steps = max(2, min(4, color_steps))
@@ -1171,6 +1147,10 @@ def _semantic_color_bucket(shade: float, attention: float, color_steps: int) -> 
         return 0
     if color_steps == 2 or attention >= 0.08:
         return color_steps - 1
+    if face is not None:
+        # The two ordinary body colors become opposing sides of a rotating
+        # surface. The last color remains reserved for acoustic attention.
+        return max(1, min(color_steps - 2, 1 + int(clamp(face) * (color_steps - 2))))
     return max(1, min(color_steps - 2, int(shade * (color_steps - 1))))
 
 
@@ -1258,11 +1238,14 @@ def _draw_visual(
     )
     material_started = time.perf_counter()
     current_cells: dict[tuple[int, int], tuple[str, int]] = {}
+    presentation = field.presentation_frame()
 
     def add_cell(y: int, x: int, cell) -> None:
         if cell.glyph == " ":
             return
-        bucket = _semantic_color_bucket(cell.shade, cell.attention, color_steps)
+        bucket = _semantic_color_bucket(
+            cell.shade, cell.attention, color_steps, cell.face
+        )
         attr = _palette_attr(palette, bucket)
         if cell.shade < 0.30:
             attr |= curses.A_DIM
@@ -1270,14 +1253,27 @@ def _draw_visual(
             attr |= curses.A_BOLD
         current_cells[(y, x)] = (cell.glyph, attr)
 
-    if material.name == "fluid":
+    if material.name == "wax":
         span_rows = material.render_spans(
-            field.bodies,
-            field.render_forces,
+            field.wax,
             width,
             height,
             style,
-            field.phase,
+            presentation.phase,
+            float(getattr(config.render, "cell_aspect", 1.85)),
+        )
+        for y, spans in span_rows.items():
+            for span in spans:
+                for offset, cell in enumerate(span.cells):
+                    add_cell(y, span.start + offset, cell)
+    elif material.name in {"fluid", "volume"}:
+        span_rows = material.render_spans(
+            presentation.bodies,
+            presentation.forces,
+            width,
+            height,
+            style,
+            presentation.phase,
             float(getattr(config.render, "cell_aspect", 1.85)),
         )
         for y, spans in span_rows.items():
@@ -1428,6 +1424,8 @@ def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: A
     media_status = ui.media.display()
     if active_status:
         status = active_status
+    elif getattr(config, "listening_context", "music") == "microphone":
+        status = "lavatune | mic active"
     elif media_status:
         status = media_status
     elif getattr(config.render, "show_stats", True):
@@ -1469,13 +1467,15 @@ def _handle_action(
         return
     if action.startswith("select:"):
         ui.selected_row = int(action.split(":", 1)[1])
-        label = controls[TAB_NAMES[ui.tab_index]][ui.selected_row].label
+        tab_name = TAB_NAMES[ui.tab_index % len(TAB_NAMES)]
+        label = controls[tab_name][ui.selected_row].label
         ui.set_status(f"selected {label}")
         return
     if action.startswith("adjust:"):
         index = int(action.split(":", 1)[1])
         ui.selected_row = index
-        message = controls[TAB_NAMES[ui.tab_index]][index].adjust(config, delta, ui)
+        tab_name = TAB_NAMES[ui.tab_index % len(TAB_NAMES)]
+        message = controls[tab_name][index].adjust(config, delta, ui)
         ui.set_status(message)
         ui.preferences_dirty = True
         ui.preferences_due_at = time.monotonic() + 0.35
@@ -1635,7 +1635,12 @@ def _run_curses(
     demo: bool,
     saved_preferences: Path | None,
 ) -> int:
-    curses.curs_set(0)
+    # Cursor visibility is an optional terminal capability.  Some embedded
+    # terminals and PTYs reject it even though the rest of curses works.
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
     curses.noecho()
     curses.cbreak()
     stdscr.keypad(True)
@@ -1650,8 +1655,9 @@ def _run_curses(
     field = LavaField()
     last_frame = _silent_frame()
     capture = _build_capture(config, demo)
-    media = MediaWatcher()
-    media.start()
+    media = MediaWatcher() if config.listening_context != "microphone" else None
+    if media is not None:
+        media.start()
     ui.audio_status = capture.status()
     ui.set_status(ui.audio_status, ttl=2.5)
 
@@ -1696,6 +1702,15 @@ def _run_curses(
             if ui.restart_audio:
                 capture.stop()
                 capture = _build_capture(config, demo)
+                if media is not None:
+                    media.stop()
+                media = (
+                    None
+                    if config.listening_context == "microphone"
+                    else MediaWatcher()
+                )
+                if media is not None:
+                    media.start()
                 last_audio_sequence = 0
                 ui.audio_status = capture.status()
                 ui.restart_audio = False
@@ -1712,10 +1727,13 @@ def _run_curses(
             for captured in pending_audio:
                 last_audio_sequence = captured.sequence
                 last_frame = captured.frame
-                ui.resolved_mode = _resolve_mode(
-                    getattr(config, "content_mode", "auto"), last_frame
+                ui.resolved_mode = getattr(config, "listening_context", "music")
+                field.observe(
+                    last_frame,
+                    "music",
+                    reactivity,
+                    behavior_for_context(ui.resolved_mode),
                 )
-                field.observe(last_frame, ui.resolved_mode, reactivity)
                 field.metrics.audio_packets += 1
                 scheduler.observe(
                     last_frame,
@@ -1726,7 +1744,7 @@ def _run_curses(
                 )
             if not pending_audio:
                 scheduler.refresh(now)
-            ui.media = media.latest()
+            ui.media = media.latest() if media is not None else MediaInfo()
             target_fps = scheduler.target_fps(config, now)
             if scheduler.immediate or _should_draw_early(next_draw, now, target_fps):
                 next_draw = now
@@ -1748,6 +1766,18 @@ def _run_curses(
 
             layout = _compute_layout(rows, cols, ui.dock_open, config)
             contour_output = (
+                getattr(config.render, "material", "text") in {"fluid", "volume", "wax"}
+                and _unicode_output_supported()
+            )
+            embody_posture = (
+                getattr(config.render, "material", "text") == "volume"
+                and _unicode_output_supported()
+            )
+            embody_wax = (
+                getattr(config.render, "material", "text") == "wax"
+                and _unicode_output_supported()
+            )
+            surface_ripples = (
                 getattr(config.render, "material", "text") == "fluid"
                 and _unicode_output_supported()
             )
@@ -1762,13 +1792,19 @@ def _run_curses(
             advance_physics = now >= next_physics or scheduler.immediate
             field.step(
                 last_frame,
-                ui.resolved_mode,
+                "music",
                 getattr(config, "profile", "atlas"),
                 reactivity,
                 config.lava,
                 float(getattr(config.render, "cell_aspect", 1.85)),
                 rasterize=not contour_output,
                 advance_physics=advance_physics,
+                behavior=behavior_for_context(
+                    getattr(config, "listening_context", "music")
+                ),
+                embody_posture=embody_posture,
+                embody_wax=embody_wax,
+                surface_ripples=surface_ripples,
             )
             if advance_physics:
                 next_physics = now + 1.0 / scheduler.physics_fps(now)
@@ -1801,7 +1837,8 @@ def _run_curses(
     finally:
         _save_pending_preferences(config, ui, saved_preferences, force=True)
         _set_focus_reporting(False)
-        media.stop()
+        if media is not None:
+            media.stop()
         capture.stop()
 
     return 0
