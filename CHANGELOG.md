@@ -4,6 +4,10 @@ This project follows [Semantic Versioning](https://semver.org/). It is currently
 
 ## Unreleased
 
+No unreleased items are planned in this checkpoint.
+
+## 0.0.2a - 2026-08-02
+
 ### Added
 
 - Added an end-to-end benchmark for the alpha Fluid, analytic contour Fluid, and prepared Text render paths.
