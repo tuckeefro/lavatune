@@ -18,7 +18,6 @@ from .material_core import (
     MaterialCell,
     MaterialSpan,
     MaterialStyle,
-    _grid_gradient,
     _sample_row,
     _semantic_sample,
     normalize_glyph_ramp,
@@ -26,6 +25,30 @@ from .material_core import (
 )
 from .signals import clamp
 from .wax import WAX_HEIGHT, WAX_WIDTH, WaxState
+
+# These names remain public through the historical ``materials`` façade even
+# though their implementation now lives in material_core.py or a material file.
+__all__ = [
+    "AFTERGLOW_NAMES",
+    "DEFAULT_GLYPHS",
+    "EDGE_NAMES",
+    "MATERIAL_NAMES",
+    "WEIGHT_NAMES",
+    "MaterialCell",
+    "MaterialSpan",
+    "MaterialStyle",
+    "normalize_glyph_ramp",
+    "visual_shade",
+    "TextMaterial",
+    "WaxMaterial",
+    "FluidMaterial",
+    "VolumeMaterial",
+    "TEXT_MATERIAL",
+    "FLUID_MATERIAL",
+    "VOLUME_MATERIAL",
+    "WAX_MATERIAL",
+    "material_for",
+]
 
 
 class TextMaterial:

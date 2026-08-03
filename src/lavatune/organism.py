@@ -19,6 +19,19 @@ from .signals import (
     time_amount,
 )
 
+# Compatibility façade for callers that imported signal types from organism.
+__all__ = [
+    "AffectiveState",
+    "AffectiveTracker",
+    "AudioForceMapper",
+    "AudioForces",
+    "NarrativeState",
+    "NarrativeTracker",
+    "clamp",
+    "lerp",
+    "time_amount",
+]
+
 
 CELL_ASPECT = 1.85
 VOLUME_BODY_LIMIT = 4

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import unicodedata
 from dataclasses import dataclass
 

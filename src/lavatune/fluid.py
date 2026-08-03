@@ -17,7 +17,7 @@ from .material_core import (
     _semantic_sample,
     visual_shade,
 )
-from .organism import Body, tile_axis_scales
+from .organism import Body, FieldFrame, tile_axis_scales
 from .signals import AudioForces, clamp
 
 

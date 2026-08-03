@@ -251,12 +251,6 @@ def _set_density(config: AppConfig, name: str) -> None:
     config.lava.blobs = DENSITY_MODES.get(name, DENSITY_MODES["medium"])
 
 
-def _palette_name(value) -> str:
-    if isinstance(value, str) and value in PALETTES:
-        return value
-    return "soft-afterglow"
-
-
 def _glyph_text(value) -> str:
     return normalize_glyph_ramp(value)
 
