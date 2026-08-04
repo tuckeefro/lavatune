@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import curses
-import math
-import os
 import select
 import sys
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
@@ -17,7 +15,6 @@ from .config import (
     CONTENT_MODES,
     PROFILE_NAMES,
     AppConfig,
-    LavaConfig,
     apply_profile,
     save_preferences,
 )
@@ -26,31 +23,87 @@ from .materials import (
     EDGE_NAMES,
     MATERIAL_NAMES,
     WEIGHT_NAMES,
-    MaterialStyle,
-    material_for,
     normalize_glyph_ramp,
-    visual_shade,
 )
 from .media import MediaInfo, MediaWatcher
-from .organism import (
-    AcousticOrganism,
-    AffectiveState,
-    AffectiveTracker,
-    AudioForceMapper,
-    AudioForces,
-    Body,
-    FieldFrame,
-    NarrativeState,
-    NarrativeTracker,
-    OrganismFieldRenderer,
-    TileComposition,
+from .organism import behavior_for_context
+from .runtime import LavaField, ReactionLatch, RuntimeMetrics
+from .signals import AffectiveState, AudioForces
+from .tui import (
+    Button,
+    COMPACT_TARGET_CELLS,
+    Control,
+    DAILY_PALETTES,
+    Layout,
+    PALETTE_FALLBACKS,
+    PALETTES,
+    TAB_NAMES,
+    UiState,
+    VisualCache,
+    changed_cell_runs as _changed_cell_runs,
+    changed_sparse_runs as _changed_sparse_runs,
+    clamp_visual_size as _clamp_visual_size,
+    compact_layout as _compact_layout,
+    compute_layout as _compute_layout,
+    draw_dock,
+    draw_status,
+    draw_visual,
+    effective_cell_width as _effective_cell_width,
+    init_colors as _init_colors,
+    interpolated_row_value as _interpolated_row_value,
+    palette_attr as _palette_attr,
+    palette_name as _palette_name,
+    safe_add as _safe_add,
+    semantic_color_bucket as _semantic_color_bucket,
+    unicode_output_supported as _unicode_output_supported,
+    visual_shade as _visual_shade,
+    visual_limits as _visual_limits,
 )
-from .text import sanitize_display_text
 
-TAB_NAMES = ("Modes", "Look", "System")
+# Keep the original module-level imports available to integrations while the
+# implementations themselves now live behind focused runtime and TUI modules.
+__all__ = [
+    "AFTERGLOW_NAMES",
+    "Button",
+    "COMPACT_TARGET_CELLS",
+    "CONTENT_MODES",
+    "Control",
+    "DAILY_PALETTES",
+    "EDGE_NAMES",
+    "Layout",
+    "LavaField",
+    "MATERIAL_NAMES",
+    "PALETTE_FALLBACKS",
+    "PALETTES",
+    "PROFILE_NAMES",
+    "ReactionLatch",
+    "RuntimeMetrics",
+    "TAB_NAMES",
+    "UiState",
+    "VisualCache",
+    "WEIGHT_NAMES",
+    "_changed_cell_runs",
+    "_changed_sparse_runs",
+    "_clamp_visual_size",
+    "_compact_layout",
+    "_compute_layout",
+    "_draw_dock",
+    "_draw_status",
+    "_draw_visual",
+    "_effective_cell_width",
+    "_init_colors",
+    "_interpolated_row_value",
+    "_palette_attr",
+    "_palette_name",
+    "_safe_add",
+    "_semantic_color_bucket",
+    "_unicode_output_supported",
+    "_visual_limits",
+    "_visual_shade",
+]
+
 ANALYSIS_MODES = ("atlas", "bands")
 BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
-COMPACT_TARGET_CELLS = 900
 REACTIVITY_MODES: dict[str, float] = {
     "whisper": 0.65,
     "conversational": 1.0,
@@ -61,28 +114,6 @@ DENSITY_MODES: dict[str, int] = {
     "medium": 4,
     "rich": 8,
 }
-DAILY_PALETTES = ("soft-afterglow", "mono", "ice", "oxide")
-PALETTES: dict[str, tuple[int, ...]] = {
-    "soft-afterglow": (236, 60, 139, 187),
-    "amber": (curses.COLOR_BLACK, curses.COLOR_RED, curses.COLOR_YELLOW, curses.COLOR_WHITE),
-    "matrix": (curses.COLOR_BLACK, curses.COLOR_GREEN, curses.COLOR_GREEN, curses.COLOR_WHITE),
-    "ice": (curses.COLOR_BLACK, curses.COLOR_BLUE, curses.COLOR_CYAN, curses.COLOR_WHITE),
-    "oxide": (curses.COLOR_BLACK, curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_YELLOW),
-    "mono": (curses.COLOR_BLACK, curses.COLOR_WHITE, curses.COLOR_WHITE, curses.COLOR_WHITE),
-    "mint": (curses.COLOR_BLACK, curses.COLOR_GREEN, curses.COLOR_CYAN, curses.COLOR_WHITE),
-    "sunset": (curses.COLOR_BLACK, curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_YELLOW),
-    "paper": (curses.COLOR_BLACK, curses.COLOR_WHITE, curses.COLOR_YELLOW, curses.COLOR_CYAN),
-    "rose": (curses.COLOR_BLACK, curses.COLOR_MAGENTA, curses.COLOR_RED, curses.COLOR_WHITE),
-}
-PALETTE_FALLBACKS: dict[str, tuple[int, ...]] = {
-    "soft-afterglow": (
-        curses.COLOR_BLACK,
-        curses.COLOR_MAGENTA,
-        curses.COLOR_WHITE,
-        curses.COLOR_YELLOW,
-    ),
-}
-_PALETTE_PAIR_IDS: dict[str, tuple[int, ...]] = {}
 STYLE_PRESETS: dict[str, str] = {
     "liquid": " .,:;~oO@",
     "soft": " .:-=+*#%@",
@@ -192,367 +223,6 @@ PRODUCT_PRESETS: dict[str, dict[str, object]] = {
 }
 
 
-@dataclass
-class Button:
-    y1: int
-    x1: int
-    y2: int
-    x2: int
-    action: str
-    delta: int = 0
-
-    def contains(self, y: int, x: int) -> bool:
-        return self.y1 <= y <= self.y2 and self.x1 <= x <= self.x2
-
-
-@dataclass
-class Control:
-    label: str
-    value: Callable[[AppConfig], str]
-    adjust: Callable[[AppConfig, int, "UiState"], str]
-
-
-@dataclass
-class Layout:
-    vis_y: int
-    vis_x: int
-    vis_h: int
-    vis_w: int
-    dock_y: int
-    dock_x: int
-    dock_h: int
-    dock_w: int
-    side: str
-
-
-@dataclass
-class UiState:
-    dock_open: bool = False
-    tab_index: int = 0
-    selected_row: int = 0
-    status: str = ""
-    status_until: float = 0.0
-    buttons: list[Button] = field(default_factory=list)
-    restart_audio: bool = False
-    reset_lava: bool = False
-    quit_requested: bool = False
-    last_mouse: tuple[int, int] | None = None
-    last_mouse_sig: tuple[int, int, int] | None = None
-    last_mouse_at: float = 0.0
-    escape_buffer: str = ""
-    escape_started_at: float = 0.0
-    resolved_mode: str = "auto"
-    audio_status: str = "booting"
-    media: MediaInfo = field(default_factory=MediaInfo)
-    preferences_dirty: bool = False
-    preferences_due_at: float = 0.0
-
-    def set_status(self, message: str, *, ttl: float = 1.8) -> None:
-        self.status = sanitize_display_text(message, max_chars=500)
-        self.status_until = time.monotonic() + ttl
-
-    def active_status(self) -> str:
-        return self.status if time.monotonic() < self.status_until else ""
-
-
-@dataclass
-class VisualCache:
-    key: tuple[object, ...] | None = None
-    cells: dict[tuple[int, int], tuple[str, int]] = field(default_factory=dict)
-
-    def clear(self) -> None:
-        self.key = None
-        self.cells = {}
-
-
-@dataclass
-class RuntimeMetrics:
-    wakeups: int = 0
-    audio_packets: int = 0
-    physics_steps: int = 0
-    draws: int = 0
-    changed_cells: int = 0
-    written_runs: int = 0
-    map_seconds: float = 0.0
-    affect_seconds: float = 0.0
-    physics_seconds: float = 0.0
-    raster_seconds: float = 0.0
-    material_seconds: float = 0.0
-    terminal_seconds: float = 0.0
-
-
-@dataclass
-class ReactionLatch:
-    transient: float = 0.0
-    pulse: float = 0.0
-    novelty: float = 0.0
-    rhythm_density: float = 0.0
-    rhythm_impulse: float = 0.0
-    hits: tuple[float, ...] = (0.0,) * 8
-    deviations: tuple[float, ...] = (0.0,) * 8
-    requested_at: float = 0.0
-
-    @property
-    def level(self) -> float:
-        return max(
-            self.transient,
-            self.pulse,
-            self.novelty,
-            self.rhythm_density,
-            self.rhythm_impulse,
-            max(self.hits, default=0.0),
-            max(self.deviations, default=0.0),
-        )
-
-    @property
-    def pending(self) -> bool:
-        return self.level >= 0.08
-
-    def observe(self, forces: AudioForces, affect: AffectiveState, now: float) -> None:
-        self.transient = max(self.transient, forces.transient)
-        self.pulse = max(self.pulse, forces.pulse)
-        self.novelty = max(self.novelty, affect.novelty)
-        self.rhythm_density = max(self.rhythm_density, forces.rhythm_density)
-        self.rhythm_impulse = min(1.0, self.rhythm_impulse + forces.rhythm_impulse)
-        self.hits = tuple(max(old, new) for old, new in zip(self.hits, forces.hits))
-        self.deviations = tuple(
-            max(old, new) for old, new in zip(self.deviations, forces.deviations)
-        )
-        if self.pending and self.requested_at <= 0.0:
-            self.requested_at = now
-
-    def consume(self, forces: AudioForces) -> AudioForces:
-        merged = replace(
-            forces,
-            transient=max(forces.transient, self.transient),
-            pulse=max(forces.pulse, self.pulse),
-            flux=max(forces.flux, self.novelty * 0.72),
-            rhythm_density=max(forces.rhythm_density, self.rhythm_density),
-            rhythm_impulse=max(forces.rhythm_impulse, self.rhythm_impulse),
-            hits=tuple(max(old, new) for old, new in zip(forces.hits, self.hits)),
-            deviations=tuple(
-                max(old, new) for old, new in zip(forces.deviations, self.deviations)
-            ),
-        )
-        self.transient = 0.0
-        self.pulse = 0.0
-        self.novelty *= 0.24
-        self.rhythm_density = 0.0
-        self.rhythm_impulse = 0.0
-        self.hits = (0.0,) * 8
-        self.deviations = (0.0,) * 8
-        self.requested_at = 0.0
-        return merged
-
-    def clear(self) -> None:
-        self.transient = 0.0
-        self.pulse = 0.0
-        self.novelty = 0.0
-        self.rhythm_density = 0.0
-        self.rhythm_impulse = 0.0
-        self.hits = (0.0,) * 8
-        self.deviations = (0.0,) * 8
-        self.requested_at = 0.0
-
-
-class LavaField:
-    """Own one renderable organism and translate audio frames into its forces."""
-
-    def __init__(self, motion_profile: str = "buoyant") -> None:
-        self.w = 0
-        self.h = 0
-        self.motion_profile = motion_profile
-        self.mapper = AudioForceMapper()
-        self.affect_tracker = AffectiveTracker()
-        self.narrative_tracker = NarrativeTracker()
-        self.organism = AcousticOrganism()
-        self.renderer = OrganismFieldRenderer()
-        self.forces = AudioForces()
-        self.render_forces = AudioForces()
-        self.affect = AffectiveState()
-        self.narrative = NarrativeState()
-        self.reactions = ReactionLatch()
-        self.metrics = RuntimeMetrics()
-        self.field_frame = FieldFrame.empty(0, 0)
-        self._last_step_at: float | None = None
-        self._last_audio_key: tuple[float, str, float] | None = None
-        self.phase = 0.0
-        self.reactivity = 1.0
-        self.frames_seen = 0
-
-    @property
-    def bodies(self) -> list[Body]:
-        return self.organism.bodies
-
-    @property
-    def composition(self) -> TileComposition:
-        return self.organism.composition
-
-    @property
-    def buffers(self) -> list[list[float]]:
-        """Compatibility composite used by metrics, not the material hot path."""
-
-        return self.field_frame.composite()
-
-    @property
-    def attention_buffers(self) -> list[list[float]]:
-        return self.field_frame.attention
-
-    # These names match the terse status display. Properties keep that UI from
-    # maintaining a second, easily stale copy of the mapped audio forces.
-    @property
-    def response_gain(self) -> float:
-        return self.reactivity
-
-    @property
-    def calibration_frames(self) -> int:
-        return self.frames_seen
-
-    @property
-    def last_low(self) -> float:
-        return self.forces.bass
-
-    @property
-    def last_mid(self) -> float:
-        return self.forces.voice
-
-    @property
-    def last_high(self) -> float:
-        return self.forces.detail
-
-    @property
-    def last_kick(self) -> float:
-        return self.forces.transient
-
-    @property
-    def last_voice(self) -> float:
-        return self.forces.voice
-
-    @property
-    def impact(self) -> float:
-        return self.forces.transient
-
-    @property
-    def spectral_bands(self) -> tuple[float, ...]:
-        return self.forces.bands
-
-    @property
-    def spectral_hits(self) -> tuple[float, ...]:
-        return self.forces.hits
-
-    def resize(self, width: int, height: int) -> None:
-        width = max(10, width)
-        height = max(6, height)
-        if width == self.w and height == self.h:
-            return
-        first_viewport = self.w == 0 or self.h == 0
-        self.w = width
-        self.h = height
-        if first_viewport:
-            self.organism.seed_for_tile(width, height, len(self.organism.bodies))
-        self.field_frame = FieldFrame.empty(width, height)
-
-    def clear(self) -> None:
-        capacity = max(1, len(self.organism.bodies))
-        self.mapper.reset()
-        self.affect_tracker.reset()
-        self.narrative_tracker.reset()
-        self.organism.reset(capacity)
-        self.organism.seed_for_tile(self.w, self.h, capacity)
-        self.forces = AudioForces()
-        self.render_forces = AudioForces()
-        self.affect = AffectiveState()
-        self.narrative = NarrativeState()
-        self.reactions.clear()
-        self._last_step_at = None
-        self._last_audio_key = None
-        self.phase = 0.0
-        self.reactivity = 1.0
-        self.frames_seen = 0
-        self.field_frame = FieldFrame.empty(self.w, self.h)
-
-    def observe(self, frame: AudioFrame, mode: str, reactivity: float) -> bool:
-        """Map each new capture frame even when the display is between draws."""
-
-        key = (float(frame.timestamp), mode, round(reactivity, 4))
-        if frame.timestamp > 0.0 and key == self._last_audio_key:
-            return False
-        started = time.perf_counter()
-        self.forces = self.mapper.map(frame, mode, reactivity)
-        self.metrics.map_seconds += time.perf_counter() - started
-        started = time.perf_counter()
-        self.affect = self.affect_tracker.update(self.forces, float(frame.timestamp))
-        self.narrative = self.narrative_tracker.update(
-            self.forces,
-            self.affect,
-            float(frame.timestamp),
-        )
-        self.metrics.affect_seconds += time.perf_counter() - started
-        self.reactions.observe(self.forces, self.affect, time.monotonic())
-        self._last_audio_key = key
-        self.reactivity = reactivity
-        self.frames_seen += 1
-        return True
-
-    def step(
-        self,
-        frame: AudioFrame,
-        mode: str,
-        profile: str,
-        reactivity: float,
-        lava_config: LavaConfig,
-        cell_aspect: float = 1.85,
-        rasterize: bool = True,
-        advance_physics: bool = True,
-    ) -> None:
-        if self.w <= 0 or self.h <= 0:
-            return
-        self.observe(frame, mode, reactivity)
-        self.render_forces = self.reactions.consume(self.forces)
-        if advance_physics:
-            now = time.monotonic()
-            nominal_fps = (
-                22.0 if profile == "atlas" else 12.0 if profile == "power-save" else 28.0
-            )
-            elapsed = (
-                1.0 / nominal_fps if self._last_step_at is None else now - self._last_step_at
-            )
-            elapsed = max(1.0 / 120.0, min(0.5, elapsed))
-            self._last_step_at = now
-
-            substeps = max(1, math.ceil(elapsed / (1.0 / 12.0)))
-            dt = elapsed / substeps
-            physics_started = time.perf_counter()
-            for _ in range(substeps):
-                self.organism.update(
-                    dt,
-                    self.render_forces,
-                    self.w,
-                    self.h,
-                    lava_config,
-                    self.motion_profile,
-                    cell_aspect,
-                    self.affect,
-                    self.narrative,
-                )
-            self.metrics.physics_steps += substeps
-            self.metrics.physics_seconds += time.perf_counter() - physics_started
-        if rasterize:
-            raster_started = time.perf_counter()
-            self.field_frame = self.renderer.render(
-                self.organism.bodies,
-                self.render_forces,
-                self.w,
-                self.h,
-                self.organism.phase,
-                self.motion_profile,
-                cell_aspect,
-            )
-            self.metrics.raster_seconds += time.perf_counter() - raster_started
-
-        self.phase = self.organism.phase
-
-
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return low if value < low else high if value > high else value
 
@@ -581,37 +251,8 @@ def _set_density(config: AppConfig, name: str) -> None:
     config.lava.blobs = DENSITY_MODES.get(name, DENSITY_MODES["medium"])
 
 
-def _palette_name(value) -> str:
-    if isinstance(value, str) and value in PALETTES:
-        return value
-    return "soft-afterglow"
-
-
-def _display_text(value) -> str:
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (list, tuple)):
-        return " ".join(str(part) for part in value)
-    return str(value)
-
-
 def _glyph_text(value) -> str:
     return normalize_glyph_ramp(value)
-
-
-def _safe_add(win: curses.window, y: int, x: int, text: str, attr: int = 0) -> None:
-    if y < 0 or x < 0:
-        return
-    height, width = win.getmaxyx()
-    if y >= height or x >= width:
-        return
-    limit = max(0, width - x)
-    if limit <= 0:
-        return
-    try:
-        win.addnstr(y, x, text, limit, attr)
-    except curses.error:
-        pass
 
 
 def _set_focus_reporting(enabled: bool) -> None:
@@ -788,119 +429,6 @@ def _wait_for_activity(
         capture.consume_signal()
 
 
-def _init_colors() -> None:
-    curses.start_color()
-    curses.use_default_colors()
-    _PALETTE_PAIR_IDS.clear()
-    pair_index = 1
-    available_colors = max(0, getattr(curses, "COLORS", 0))
-    pair_limit = max(1, getattr(curses, "COLOR_PAIRS", 0))
-    if available_colors <= 0 or pair_limit <= 1:
-        _PALETTE_PAIR_IDS.update({name: (0,) * len(palette) for name, palette in PALETTES.items()})
-        return
-    for name, palette in PALETTES.items():
-        if pair_index + len(palette) > pair_limit:
-            _PALETTE_PAIR_IDS[name] = _PALETTE_PAIR_IDS.get(
-                "soft-afterglow", (0,) * len(palette)
-            )
-            continue
-        fallback = PALETTE_FALLBACKS.get(name, palette)
-        pair_ids = []
-        for bucket, fg in enumerate(palette):
-            resolved = fg if 0 <= fg < available_colors else fallback[bucket]
-            if not 0 <= resolved < available_colors:
-                resolved = min(curses.COLOR_WHITE, available_colors - 1)
-            curses.init_pair(pair_index, resolved, -1)
-            pair_ids.append(pair_index)
-            pair_index += 1
-        _PALETTE_PAIR_IDS[name] = tuple(pair_ids)
-
-
-def _palette_attr(name: str, bucket: int) -> int:
-    bucket = max(0, min(bucket, 3))
-    pair_ids = _PALETTE_PAIR_IDS.get(name) or _PALETTE_PAIR_IDS.get("soft-afterglow")
-    pair_id = pair_ids[bucket] if pair_ids and bucket < len(pair_ids) else 0
-    return curses.color_pair(pair_id)
-
-
-def _env_value(name: str) -> str:
-    value = os.environ.get(f"LAVATUNE_{name}")
-    if value is not None:
-        return value
-    return os.environ.get(f"CODEXDECK_LAVATUNE_{name}", "")
-
-
-def _env_flag(name: str) -> bool:
-    value = _env_value(name)
-    return value.lower() in {"1", "true", "yes", "on"}
-
-
-def _positive_env_int(name: str) -> int | None:
-    value = _env_value(name)
-    if not value:
-        return None
-    try:
-        number = int(value)
-    except ValueError:
-        return None
-    return number if number > 0 else None
-
-
-def _compact_layout(config: AppConfig | None) -> bool:
-    render = getattr(config, "render", None)
-    return _env_flag("COMPACT") or bool(getattr(render, "compact", False))
-
-
-def _visual_limits(config: AppConfig | None) -> tuple[int | None, int | None]:
-    render = getattr(config, "render", None)
-    width = _positive_env_int("MAX_WIDTH") or getattr(render, "max_width", None)
-    height = _positive_env_int("MAX_HEIGHT") or getattr(render, "max_height", None)
-    return width, height
-
-
-def _clamp_visual_size(width: int, height: int, config: AppConfig | None) -> tuple[int, int]:
-    max_width, max_height = _visual_limits(config)
-    if max_width:
-        width = min(width, max_width)
-    if max_height:
-        height = min(height, max_height)
-    return max(1, width), max(1, height)
-
-
-def _compute_layout(rows: int, cols: int, dock_open: bool, config: AppConfig | None = None) -> Layout:
-    # Controls are backstage: a closed dock consumes no tile area. When opened,
-    # wide terminals place it beside the organism and short terminals below it.
-    if not dock_open:
-        vis_w, vis_h = _clamp_visual_size(cols, max(1, rows - 1), config)
-        return Layout(0, 0, vis_h, vis_w, vis_h, vis_w, 0, 0, "hidden")
-
-    side_layout = cols >= 96
-    if side_layout:
-        dock_w = min(38, max(1, cols - 1))
-        vis_h = max(1, rows - 1)
-        vis_w = max(1, cols - dock_w)
-        vis_w, vis_h = _clamp_visual_size(vis_w, vis_h, config)
-        return Layout(0, 0, vis_h, vis_w, 0, vis_w, vis_h, dock_w, "right")
-    requested_dock_h = 12 if rows >= 16 else 1
-    dock_h = min(requested_dock_h, max(1, rows - 2))
-    vis_h = max(1, rows - dock_h - 1)
-    vis_w, vis_h = _clamp_visual_size(cols, vis_h, config)
-    return Layout(0, 0, vis_h, vis_w, vis_h, 0, dock_h, vis_w, "bottom")
-
-
-def _effective_cell_width(config: AppConfig, width: int, height: int) -> int:
-    configured = max(1, int(getattr(config.render, "scale", 1)))
-    if not _compact_layout(config):
-        return configured
-
-    # Compact mode budgets simulated cells by area. A tiny i3 tile therefore
-    # gains detail while a large tile avoids an unnecessary CPU/output spike.
-    target_cells = _positive_env_int("TARGET_CELLS") or COMPACT_TARGET_CELLS
-    target_cells = max(180, min(1400, target_cells))
-    adaptive = max(1, math.ceil((max(1, width) * max(1, height)) / target_cells))
-    return max(1, min(5, adaptive))
-
-
 def _style_name(value) -> str:
     glyphs = _glyph_text(value)
     for name, preset in STYLE_PRESETS.items():
@@ -969,6 +497,16 @@ def _apply_product_preset(config: AppConfig, preset_name: str) -> None:
         setattr(config.audio, "frame_size", min(config.audio.frame_size, 1024))
     _set_reactivity(config, str(preset["reactivity"]))
     _set_density(config, str(preset["density"]))
+
+
+def _set_listening_context(config: AppConfig, context: str) -> None:
+    """Apply the only daily choice; analysis remains a shared raw signal."""
+
+    if context not in {"podcast", "radio", "music", "microphone"}:
+        context = "music"
+    config.listening_context = context
+    config.content_mode = "music"
+    config.audio.capture_route = "microphone" if context == "microphone" else "system"
 
 
 def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
@@ -1042,413 +580,39 @@ def _make_controls(config: AppConfig) -> dict[str, list[Control]]:
         refresh_states(config)
 
     return {
-        "Modes": [
+        "Listening": [
             choice_control(
-                "mode",
-                lambda c: preset_state["name"],
-                set_preset,
-                tuple(PRODUCT_PRESETS.keys()),
+                "listening",
+                lambda c: getattr(c, "listening_context", "music"),
+                _set_listening_context,
+                ("podcast", "radio", "music", "microphone"),
                 restart_audio=True,
-            ),
-            choice_control(
-                "react",
-                lambda c: _reactivity_name(float(getattr(c.lava, "reactivity", 1.0))),
-                _set_reactivity,
-                tuple(REACTIVITY_MODES.keys()),
-                on_change=mark_state,
-            ),
-            choice_control(
-                "source",
-                lambda c: getattr(c, "content_mode", "auto"),
-                lambda c, v: setattr(c, "content_mode", v),
-                CONTENT_MODES,
-                on_change=mark_state,
-            ),
-        ],
-        "Look": [
-            choice_control(
-                "material",
-                lambda c: getattr(c.render, "material", "text"),
-                lambda c, v: setattr(c.render, "material", v),
-                MATERIAL_NAMES,
-            ),
-            choice_control(
-                "weight",
-                lambda c: getattr(c.render, "weight", "balanced"),
-                lambda c, v: setattr(c.render, "weight", v),
-                WEIGHT_NAMES,
-            ),
-            choice_control(
-                "edge",
-                lambda c: getattr(c.render, "edge", "soft"),
-                lambda c, v: setattr(c.render, "edge", v),
-                EDGE_NAMES,
-            ),
-            choice_control(
-                "afterglow",
-                lambda c: getattr(c.render, "afterglow", "present"),
-                lambda c, v: setattr(c.render, "afterglow", v),
-                AFTERGLOW_NAMES,
-            ),
-            choice_control(
-                "palette",
-                lambda c: _palette_name(getattr(c.render, "palette", "soft-afterglow")),
-                lambda c, v: setattr(c.render, "palette", _palette_name(v)),
-                DAILY_PALETTES,
-                on_change=mark_state,
-            ),
-        ],
-        "System": [
-            choice_control(
-                "profile",
-                lambda c: getattr(c, "profile", "atlas"),
-                lambda c, v: setattr(c, "profile", v),
-                PROFILE_NAMES,
-                restart_audio=True,
-                on_change=lambda c, v: (_apply_profile_in_place(c, v), mark_state(c, v)),
-            ),
-            int_control(
-                "frame",
-                lambda c: int(getattr(c.audio, "frame_size", 1024)),
-                lambda c, v: setattr(c.audio, "frame_size", v),
-                low=256,
-                high=4096,
-                step=256,
-                restart_audio=True,
-            ),
-            int_control(
-                "fps",
-                lambda c: int(getattr(c, "fps", 24)),
-                lambda c, v: setattr(c, "fps", v),
-                low=8,
-                high=60,
-                step=2,
-                on_change=mark_state,
-            ),
-            choice_control(
-                "analysis",
-                lambda c: getattr(c.audio, "analysis", "atlas"),
-                lambda c, v: setattr(c.audio, "analysis", v),
-                ANALYSIS_MODES,
-                restart_audio=True,
-                on_change=mark_state,
-            ),
-            choice_control(
-                "backend",
-                lambda c: getattr(c.audio, "backend", "auto"),
-                lambda c, v: setattr(c.audio, "backend", v),
-                BACKEND_MODES,
-                restart_audio=True,
-            ),
-            bool_control(
-                "stats",
-                lambda c: bool(getattr(c.render, "show_stats", True)),
-                lambda c, v: setattr(c.render, "show_stats", v),
             ),
         ],
     }
 
 
-def _interpolated_row_value(source: Sequence[float], screen_x: int, screen_width: int) -> float:
-    if not source:
-        return 0.0
-    grid_position = screen_x * max(0, len(source) - 1) / max(1, screen_width - 1)
-    left = int(grid_position)
-    right = min(len(source) - 1, left + 1)
-    mix = grid_position - left
-    return source[left] * (1.0 - mix) + source[right] * mix
+# Compatibility exports for integrations which imported the original private
+# drawing helpers.  The implementations live in tui.py.
+_draw_visual = draw_visual
+_draw_dock = draw_dock
 
 
-def _visual_shade(value: float, texture: float = 0.0) -> float:
-    return visual_shade(value, texture)
-
-
-def _semantic_color_bucket(shade: float, attention: float, color_steps: int) -> int:
-    """Reserve the final palette color for a local acoustic event."""
-
-    color_steps = max(2, min(4, color_steps))
-    if shade <= 0.0:
-        return 0
-    if color_steps == 2 or attention >= 0.08:
-        return color_steps - 1
-    return max(1, min(color_steps - 2, int(shade * (color_steps - 1))))
-
-
-def _unicode_output_supported(encoding: str | None = None) -> bool:
-    resolved = (encoding or sys.stdout.encoding or "").replace("-", "").lower()
-    return "utf8" in resolved
-
-
-def _changed_cell_runs(
-    previous: tuple[tuple[str, int], ...] | None,
-    current: tuple[tuple[str, int], ...],
-) -> list[tuple[int, str, int]]:
-    """Group only changed adjacent cells that share a terminal attribute."""
-
-    runs: list[tuple[int, str, int]] = []
-    x = 0
-    while x < len(current):
-        if previous is not None and x < len(previous) and previous[x] == current[x]:
-            x += 1
-            continue
-        start = x
-        attr = current[x][1]
-        chars = []
-        while x < len(current) and current[x][1] == attr:
-            if previous is not None and x < len(previous) and previous[x] == current[x]:
-                break
-            chars.append(current[x][0])
-            x += 1
-        runs.append((start, "".join(chars), attr))
-    return runs
-
-
-def _changed_sparse_runs(
-    previous: dict[tuple[int, int], tuple[str, int]],
-    current: dict[tuple[int, int], tuple[str, int]],
-    blank_attr: int,
-) -> list[tuple[int, int, str, int]]:
-    """Return terminal runs for the sparse union of old and new contours."""
-
-    changed = sorted(
-        position
-        for position in previous.keys() | current.keys()
-        if previous.get(position) != current.get(position)
-    )
-    runs: list[tuple[int, int, str, int]] = []
-    index = 0
-    while index < len(changed):
-        y, x = changed[index]
-        char, attr = current.get((y, x), (" ", blank_attr))
-        start = x
-        text = [char]
-        index += 1
-        while index < len(changed):
-            next_y, next_x = changed[index]
-            next_char, next_attr = current.get((next_y, next_x), (" ", blank_attr))
-            if next_y != y or next_x != x + 1 or next_attr != attr:
-                break
-            text.append(next_char)
-            x = next_x
-            index += 1
-        runs.append((y, start, "".join(text), attr))
-    return runs
-
-
-def _draw_visual(
-    win: curses.window,
+def _draw_status(
+    stdscr: curses.window,
+    config: AppConfig,
+    ui: UiState,
+    _frame: AudioFrame,
     field: LavaField,
-    config: AppConfig,
-    frame: AudioFrame,
-    ui: UiState,
-    cache: VisualCache | None = None,
 ) -> None:
-    height, width = win.getmaxyx()
-    palette = _palette_name(getattr(config.render, "palette", "amber"))
-    color_steps = max(2, min(4, int(getattr(config.render, "color_steps", 4))))
-    material = material_for(
-        getattr(config.render, "material", "text"),
-        unicode_supported=_unicode_output_supported(),
+    draw_status(
+        stdscr,
+        config,
+        ui,
+        field,
+        _product_preset_name_for_config(config),
+        _reactivity_name(float(getattr(config.lava, "reactivity", 1.0))),
     )
-    style = MaterialStyle(
-        glyphs=_glyph_text(getattr(config.render, "glyphs", GLYPH_PRESETS[0])),
-        weight=getattr(config.render, "weight", "balanced"),
-        edge=getattr(config.render, "edge", "soft"),
-        afterglow=getattr(config.render, "afterglow", "present"),
-    )
-    material_started = time.perf_counter()
-    current_cells: dict[tuple[int, int], tuple[str, int]] = {}
-
-    def add_cell(y: int, x: int, cell) -> None:
-        if cell.glyph == " ":
-            return
-        bucket = _semantic_color_bucket(cell.shade, cell.attention, color_steps)
-        attr = _palette_attr(palette, bucket)
-        if cell.shade < 0.30:
-            attr |= curses.A_DIM
-        elif cell.attention > 0.58:
-            attr |= curses.A_BOLD
-        current_cells[(y, x)] = (cell.glyph, attr)
-
-    if material.name == "fluid":
-        span_rows = material.render_spans(
-            field.bodies,
-            field.render_forces,
-            width,
-            height,
-            style,
-            field.phase,
-            float(getattr(config.render, "cell_aspect", 1.85)),
-        )
-        for y, spans in span_rows.items():
-            for span in spans:
-                for offset, cell in enumerate(span.cells):
-                    add_cell(y, span.start + offset, cell)
-    else:
-        cell_rows = material.render(
-            field.field_frame,
-            width,
-            height,
-            style,
-            field.phase,
-        )
-        for y, cells in enumerate(cell_rows):
-            for x, cell in enumerate(cells):
-                add_cell(y, x, cell)
-    field.metrics.material_seconds += time.perf_counter() - material_started
-
-    cache_key = (
-        width,
-        height,
-        material.name,
-        palette,
-        color_steps,
-        style,
-        bool(getattr(config.render, "show_stats", False)),
-    )
-    previous_cells: dict[tuple[int, int], tuple[str, int]] = {}
-    if cache is not None:
-        if cache.key != cache_key:
-            win.erase()
-        else:
-            previous_cells = cache.cells
-
-    terminal_started = time.perf_counter()
-    changed_cells = 0
-    written_runs = 0
-    blank_attr = _palette_attr(palette, 0)
-    for y, start, text, attr in _changed_sparse_runs(
-        previous_cells, current_cells, blank_attr
-    ):
-        _safe_add(win, y, start, text, attr)
-        changed_cells += len(text)
-        written_runs += 1
-
-    if cache is not None:
-        cache.key = cache_key
-        cache.cells = current_cells
-    field.metrics.draws += 1
-    field.metrics.changed_cells += changed_cells
-    field.metrics.written_runs += written_runs
-    field.metrics.terminal_seconds += time.perf_counter() - terminal_started
-
-    if getattr(config.render, "show_stats", True):
-        stats = [
-            f"mode {ui.resolved_mode}",
-            f"rms {frame.rms:0.2f}",
-            f"attack {frame.attack:0.2f}",
-            f"gain x{field.response_gain:0.2f}",
-            f"l/m/h {field.last_low:0.1f}/{field.last_mid:0.1f}/{field.last_high:0.1f}",
-            f"kick {field.last_kick:0.1f}",
-            f"voice {field.last_voice:0.1f}",
-            f"spec {max(field.spectral_bands) if field.spectral_bands else 0.0:0.1f}",
-            f"hit {max(field.spectral_hits) if field.spectral_hits else 0.0:0.1f}",
-            f"impact {field.impact:0.1f}",
-            f"zcr {frame.zcr:0.2f}",
-        ]
-        for idx, line in enumerate(stats):
-            if idx >= height:
-                break
-            _safe_add(win, idx, 1, line, curses.A_DIM)
-        if cache is not None:
-            cache.clear()
-
-
-def _draw_dock(
-    win: curses.window,
-    config: AppConfig,
-    ui: UiState,
-    controls: dict[str, list[Control]],
-    layout: Layout,
-) -> None:
-    win.erase()
-    ui.buttons = []
-    height, width = win.getmaxyx()
-
-    if not ui.dock_open:
-        label = "[=]" if layout.side == "right" else "[ dock ]"
-        if layout.side == "right":
-            for idx, ch in enumerate(label):
-                _safe_add(win, min(idx + 1, height - 1), 0, ch, curses.A_BOLD)
-            ui.buttons.append(Button(0, 0, min(height - 1, len(label) + 1), min(width - 1, 2), "toggle_dock"))
-        else:
-            _safe_add(win, 0, 1, label, curses.A_BOLD)
-            ui.buttons.append(Button(0, 0, 0, min(width - 1, len(label) + 2), "toggle_dock"))
-        win.noutrefresh()
-        return
-
-    title = " lavatune companion "
-    _safe_add(win, 0, 1, title, curses.A_BOLD)
-    close_x = max(1, width - 5)
-    _safe_add(win, 0, close_x, "[x]", curses.A_BOLD)
-    ui.buttons.append(Button(0, close_x, 0, min(width - 1, close_x + 2), "toggle_dock"))
-
-    tab_x = 1
-    for index, name in enumerate(TAB_NAMES):
-        text = f" {name} "
-        attr = curses.A_REVERSE if index == ui.tab_index else curses.A_NORMAL
-        _safe_add(win, 2, tab_x, text, attr)
-        ui.buttons.append(Button(2, tab_x, 2, min(width - 1, tab_x + len(text) - 1), f"tab:{index}"))
-        tab_x += len(text) + 1
-
-    rows = controls[TAB_NAMES[ui.tab_index]]
-    ui.selected_row = max(0, min(ui.selected_row, len(rows) - 1))
-
-    y = 4
-    for index, control in enumerate(rows):
-        selected = index == ui.selected_row
-        attr = curses.A_BOLD if selected else curses.A_NORMAL
-        value = _display_text(control.value(config))
-        _safe_add(win, y, 2, control.label.ljust(10), attr)
-
-        left_x = max(14, width - 21)
-        value_x = left_x + 4
-        right_x = max(value_x + len(value) + 2, width - 5)
-
-        _safe_add(win, y, left_x, "[-]", curses.A_REVERSE if selected else curses.A_DIM)
-        _safe_add(win, y, value_x, value[: max(6, width - value_x - 6)], attr)
-        _safe_add(win, y, right_x, "[+]", curses.A_REVERSE if selected else curses.A_DIM)
-
-        ui.buttons.append(Button(y, 2, y, min(width - 1, width - 2), f"select:{index}"))
-        ui.buttons.append(Button(y, left_x, y, min(width - 1, left_x + 2), f"adjust:{index}", -1))
-        ui.buttons.append(Button(y, right_x, y, min(width - 1, right_x + 2), f"adjust:{index}", 1))
-        y += 2
-        if y >= height - 4:
-            break
-
-    win.noutrefresh()
-
-
-def _draw_status(stdscr: curses.window, config: AppConfig, ui: UiState, frame: AudioFrame, field: LavaField) -> None:
-    rows, cols = stdscr.getmaxyx()
-    preset = _product_preset_name_for_config(config)
-    react = _reactivity_name(float(getattr(config.lava, "reactivity", 1.0)))
-    state = f"calibrating {min(field.calibration_frames, 72)}/72" if field.calibration_frames < 72 else f"tracking x{field.response_gain:0.2f}"
-    active_status = ui.active_status()
-    media_status = ui.media.display()
-    if active_status:
-        status = active_status
-    elif media_status:
-        status = media_status
-    elif getattr(config.render, "show_stats", True):
-        status = (
-            f"{preset} | {react} | {ui.resolved_mode} | {state} | "
-            f"tone {field.forces.tone:0.2f} | tempo {field.forces.tempo:0.2f} | "
-            f"pulse {field.forces.pulse:0.2f} | density {field.forces.rhythm_density:0.2f} | "
-            f"hold/snap {field.affect.restraint:0.2f}/{field.affect.snap:0.2f} | "
-            f"story {field.narrative.expectation:0.1f}/"
-            f"{field.narrative.interruption:0.1f}/{field.narrative.resolution:0.1f} | "
-            f"l/m/h {field.last_low:0.1f}/{field.last_mid:0.1f}/{field.last_high:0.1f}"
-        )
-    else:
-        status = "lavatune | listening"
-    line = status[: max(0, cols - 1)]
-    attr = curses.A_REVERSE if active_status else curses.A_DIM
-    try:
-        stdscr.addnstr(rows - 1, 0, " " * max(0, cols - 1), max(0, cols - 1), attr)
-        stdscr.addnstr(rows - 1, 0, line, max(0, cols - 1), attr)
-    except curses.error:
-        pass
 
 
 def _handle_action(
@@ -1469,13 +633,15 @@ def _handle_action(
         return
     if action.startswith("select:"):
         ui.selected_row = int(action.split(":", 1)[1])
-        label = controls[TAB_NAMES[ui.tab_index]][ui.selected_row].label
+        tab_name = TAB_NAMES[ui.tab_index % len(TAB_NAMES)]
+        label = controls[tab_name][ui.selected_row].label
         ui.set_status(f"selected {label}")
         return
     if action.startswith("adjust:"):
         index = int(action.split(":", 1)[1])
         ui.selected_row = index
-        message = controls[TAB_NAMES[ui.tab_index]][index].adjust(config, delta, ui)
+        tab_name = TAB_NAMES[ui.tab_index % len(TAB_NAMES)]
+        message = controls[tab_name][index].adjust(config, delta, ui)
         ui.set_status(message)
         ui.preferences_dirty = True
         ui.preferences_due_at = time.monotonic() + 0.35
@@ -1635,7 +801,12 @@ def _run_curses(
     demo: bool,
     saved_preferences: Path | None,
 ) -> int:
-    curses.curs_set(0)
+    # Cursor visibility is an optional terminal capability.  Some embedded
+    # terminals and PTYs reject it even though the rest of curses works.
+    try:
+        curses.curs_set(0)
+    except curses.error:
+        pass
     curses.noecho()
     curses.cbreak()
     stdscr.keypad(True)
@@ -1650,8 +821,9 @@ def _run_curses(
     field = LavaField()
     last_frame = _silent_frame()
     capture = _build_capture(config, demo)
-    media = MediaWatcher()
-    media.start()
+    media = MediaWatcher() if config.listening_context != "microphone" else None
+    if media is not None:
+        media.start()
     ui.audio_status = capture.status()
     ui.set_status(ui.audio_status, ttl=2.5)
 
@@ -1696,6 +868,15 @@ def _run_curses(
             if ui.restart_audio:
                 capture.stop()
                 capture = _build_capture(config, demo)
+                if media is not None:
+                    media.stop()
+                media = (
+                    None
+                    if config.listening_context == "microphone"
+                    else MediaWatcher()
+                )
+                if media is not None:
+                    media.start()
                 last_audio_sequence = 0
                 ui.audio_status = capture.status()
                 ui.restart_audio = False
@@ -1712,10 +893,13 @@ def _run_curses(
             for captured in pending_audio:
                 last_audio_sequence = captured.sequence
                 last_frame = captured.frame
-                ui.resolved_mode = _resolve_mode(
-                    getattr(config, "content_mode", "auto"), last_frame
+                ui.resolved_mode = getattr(config, "listening_context", "music")
+                field.observe(
+                    last_frame,
+                    "music",
+                    reactivity,
+                    behavior_for_context(ui.resolved_mode),
                 )
-                field.observe(last_frame, ui.resolved_mode, reactivity)
                 field.metrics.audio_packets += 1
                 scheduler.observe(
                     last_frame,
@@ -1726,7 +910,7 @@ def _run_curses(
                 )
             if not pending_audio:
                 scheduler.refresh(now)
-            ui.media = media.latest()
+            ui.media = media.latest() if media is not None else MediaInfo()
             target_fps = scheduler.target_fps(config, now)
             if scheduler.immediate or _should_draw_early(next_draw, now, target_fps):
                 next_draw = now
@@ -1748,6 +932,18 @@ def _run_curses(
 
             layout = _compute_layout(rows, cols, ui.dock_open, config)
             contour_output = (
+                getattr(config.render, "material", "text") in {"fluid", "volume", "wax"}
+                and _unicode_output_supported()
+            )
+            embody_posture = (
+                getattr(config.render, "material", "text") == "volume"
+                and _unicode_output_supported()
+            )
+            embody_wax = (
+                getattr(config.render, "material", "text") == "wax"
+                and _unicode_output_supported()
+            )
+            surface_ripples = (
                 getattr(config.render, "material", "text") == "fluid"
                 and _unicode_output_supported()
             )
@@ -1762,13 +958,19 @@ def _run_curses(
             advance_physics = now >= next_physics or scheduler.immediate
             field.step(
                 last_frame,
-                ui.resolved_mode,
+                "music",
                 getattr(config, "profile", "atlas"),
                 reactivity,
                 config.lava,
                 float(getattr(config.render, "cell_aspect", 1.85)),
                 rasterize=not contour_output,
                 advance_physics=advance_physics,
+                behavior=behavior_for_context(
+                    getattr(config, "listening_context", "music")
+                ),
+                embody_posture=embody_posture,
+                embody_wax=embody_wax,
+                surface_ripples=surface_ripples,
             )
             if advance_physics:
                 next_physics = now + 1.0 / scheduler.physics_fps(now)
@@ -1801,7 +1003,8 @@ def _run_curses(
     finally:
         _save_pending_preferences(config, ui, saved_preferences, force=True)
         _set_focus_reporting(False)
-        media.stop()
+        if media is not None:
+            media.stop()
         capture.stop()
 
     return 0

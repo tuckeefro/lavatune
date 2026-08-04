@@ -4,519 +4,91 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from .audio import AudioFrame
 from .config import LavaConfig
+from .signals import (
+    AffectiveState,
+    AffectiveTracker,
+    AudioForceMapper,
+    AudioForces,
+    NarrativeState,
+    NarrativeTracker,
+    clamp,
+    lerp,
+    time_amount,
+)
+
+# Compatibility façade for callers that imported signal types from organism.
+__all__ = [
+    "AffectiveState",
+    "AffectiveTracker",
+    "AudioForceMapper",
+    "AudioForces",
+    "NarrativeState",
+    "NarrativeTracker",
+    "clamp",
+    "lerp",
+    "time_amount",
+]
 
 
 CELL_ASPECT = 1.85
-DEVIATION_WINDOW_SECONDS = 2.4
-DEVIATION_WARMUP_SECONDS = 0.45
-
-
-def clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
-    return low if value < low else high if value > high else value
-
-
-def lerp(current: float, target: float, amount: float) -> float:
-    return current + (target - current) * clamp(amount)
-
-
-def time_amount(reference_amount: float, dt: float, reference_fps: float = 22.0) -> float:
-    """Convert a frame-relative smoothing amount into elapsed-time smoothing."""
-
-    return 1.0 - (1.0 - clamp(reference_amount)) ** (clamp(dt, 1.0 / 120.0, 1.0) * reference_fps)
+VOLUME_BODY_LIMIT = 4
 
 
 @dataclass(slots=True, frozen=True)
-class AudioForces:
-    """Physical vocabulary shared by analysis, motion, and rendering."""
+class SharedPosture:
+    """A bounded shared climate that leaves each organism its own agency."""
 
-    bass: float = 0.0
-    voice: float = 0.0
-    detail: float = 0.0
-    transient: float = 0.0
-    energy: float = 0.0
-    level: float = -1.0
-    tone: float = 0.5
-    tempo: float = 0.0
-    pulse: float = 0.0
-    flux: float = 0.0
-    rhythm_density: float = 0.0
-    rhythm_impulse: float = 0.0
-    bands: tuple[float, ...] = (0.0,) * 8
-    hits: tuple[float, ...] = (0.0,) * 8
-    deviations: tuple[float, ...] = (0.0,) * 8
-
-
-@dataclass(slots=True, frozen=True)
-class AffectiveState:
-    """Slow acoustic posture, intentionally not an emotion classifier."""
-
-    weight: float = 0.0
-    agitation: float = 0.0
-    cohesion: float = 0.5
-    tension: float = 0.0
+    contraction: float = 0.0
+    fracture: float = 0.0
     openness: float = 0.0
-    release: float = 0.0
-    intimacy: float = 0.0
-    volatility: float = 0.0
-    novelty: float = 0.0
-    fragility: float = 0.0
-    yearning: float = 0.0
-    catharsis: float = 0.0
-    restraint: float = 0.0
-    snap: float = 0.0
+    stillness: float = 0.0
+    synchrony: float = 0.0
 
 
-@dataclass(slots=True, frozen=True)
-class NarrativeState:
-    """Authored temporal meaning without named-emotion classification."""
+def shared_posture(affect: AffectiveState, story: NarrativeState) -> SharedPosture:
+    """Translate existing acoustic posture into visible group relationships."""
 
-    expectation: float = 0.0
-    interruption: float = 0.0
-    resolution: float = 0.0
-
-
-class AffectiveTracker:
-    """Accumulate gesture, phrase, and atmosphere cues with constant work."""
-
-    def __init__(self) -> None:
-        self.state = AffectiveState()
-        self._last_energy = 0.0
-        self._last_bands = (0.0,) * 8
-        self._last_at = 0.0
-        self._restraint_seconds = 0.0
-        self._slow_energy = 0.0
-        self._slow_bands = (0.0,) * 8
-        self._context_initialized = False
-        self._snap_candidate = 0.0
-        self._snap_candidate_age = 0.0
-
-    def reset(self) -> None:
-        self.__init__()
-
-    def update(self, forces: AudioForces, timestamp: float) -> AffectiveState:
-        dt = 1.0 / 16.0
-        if timestamp > 0.0 and self._last_at > 0.0 and timestamp > self._last_at:
-            dt = clamp(timestamp - self._last_at, 1.0 / 120.0, 0.35)
-        if timestamp > 0.0:
-            self._last_at = timestamp
-
-        bands = forces.bands or (0.0,) * 8
-        signal_level = forces.level if forces.level >= 0.0 else forces.energy
-        mean = sum(bands) / max(1, len(bands))
-        spread = math.sqrt(sum((value - mean) ** 2 for value in bands) / max(1, len(bands)))
-        novelty = sum(abs(value - old) for value, old in zip(bands, self._last_bands)) / 8.0
-        novelty = clamp(novelty * 1.8 + forces.flux * 0.55 + max(forces.hits) * 0.25)
-        self._last_bands = tuple(bands)
-
-        if not self._context_initialized:
-            self._slow_energy = signal_level
-            self._slow_bands = tuple(bands)
-            self._context_initialized = True
-        energy_contrast = max(0.0, signal_level - self._slow_energy)
-        band_rises = tuple(
-            current - baseline for current, baseline in zip(bands, self._slow_bands)
-        )
-        band_contrast = sum(max(0.0, rise) for rise in band_rises) / max(
-            1, len(band_rises)
-        )
-        coherent_rises = sum(rise >= 0.10 for rise in band_rises)
-
-        # Restraint establishes context, then saturates. Continued calm never
-        # charges a larger response than an already-qualified short passage.
-        restrained = (
-            signal_level <= 0.38
-            and forces.transient <= 0.16
-            and forces.pulse <= 0.18
-            and forces.rhythm_density <= 0.22
-        )
-        if restrained:
-            self._restraint_seconds = min(8.0, self._restraint_seconds + dt)
-        else:
-            self._restraint_seconds = max(0.0, self._restraint_seconds - dt * 0.55)
-        restraint = clamp(self._restraint_seconds / 8.0)
-
-        # A snap needs both a credible attack and a coherent multi-band change,
-        # then one confirming frame of sustained contrast. This keeps a lone
-        # notification local while allowing a musical break to open the group.
-        attack_gate = (
-            forces.transient >= 0.38
-            or forces.pulse >= 0.42
-            or forces.rhythm_impulse >= 0.30
-        )
-        coherent_change = energy_contrast >= 0.28 and coherent_rises >= 3
-        contrast_strength = clamp(energy_contrast * 0.85 + band_contrast * 0.75)
-        snap_target = 0.0
-        if attack_gate and coherent_change and restraint >= 0.12:
-            self._snap_candidate = max(self._snap_candidate, contrast_strength)
-            self._snap_candidate_age = 0.0
-        elif self._snap_candidate > 0.0:
-            self._snap_candidate_age += dt
-            sustained_change = energy_contrast >= 0.20 and coherent_rises >= 3
-            if sustained_change and self._snap_candidate_age <= 0.24:
-                snap_target = clamp(self._snap_candidate * 1.35) * restraint
-                self._restraint_seconds = 0.0
-                restraint = 0.0
-                self._snap_candidate = 0.0
-                self._snap_candidate_age = 0.0
-            elif self._snap_candidate_age > 0.24 or energy_contrast < 0.10:
-                self._snap_candidate = 0.0
-                self._snap_candidate_age = 0.0
-
-        context_amount = 1.0 - math.exp(-dt / 12.0)
-        self._slow_energy = lerp(self._slow_energy, signal_level, context_amount)
-        self._slow_bands = tuple(
-            lerp(baseline, current, context_amount)
-            for baseline, current in zip(self._slow_bands, bands)
-        )
-
-        agitation_target = clamp(
-            forces.transient * 0.48
-            + forces.pulse * 0.30
-            + forces.flux * 0.42
-            + forces.tempo * 0.18
-            + forces.rhythm_density * 0.24
-        )
-        cohesion_target = clamp(1.0 - spread * 2.4 + forces.voice * 0.10)
-        openness_target = clamp(spread * 2.1 + forces.detail * 0.28 + forces.tone * 0.12)
-        weight_target = clamp(forces.bass * 0.72 + forces.energy * 0.20)
-        intimacy_target = clamp(
-            forces.voice * (0.82 - forces.transient * 0.32) + cohesion_target * 0.12
-        )
-        tension_target = clamp(
-            forces.energy * 0.34 + agitation_target * 0.52 + forces.detail * 0.14
-        )
-        energy_rise = max(0.0, forces.energy - self._last_energy)
-        energy_drop = max(0.0, self._last_energy - forces.energy)
-        tension_drop = max(0.0, self.state.tension - tension_target)
-        release_target = clamp(energy_drop * 1.4 + tension_drop * 1.8 + forces.pulse * 0.10)
-        volatility_target = clamp(
-            abs(forces.energy - self._last_energy) * 1.6 + novelty * 0.62
-        )
-        fragility_target = clamp(
-            forces.detail * (0.92 - forces.energy * 0.62)
-            + forces.voice * (1.0 - forces.transient) * 0.18
-        )
-        yearning_target = clamp(
-            forces.voice * 0.38
-            + forces.detail * 0.26
-            + self.state.tension * 0.35
-            + openness_target * 0.12
-            - agitation_target * 0.18
-        )
-        catharsis_target = clamp(
-            self.state.tension
-            * (
-                forces.transient * 0.60
-                + forces.pulse * 0.50
-                + energy_rise * 1.10
-            )
-            + release_target * 0.30
-            + snap_target * 0.90
-        )
-        self._last_energy = forces.energy
-
-        phrase = 1.0 - math.exp(-dt / 2.6)
-        atmosphere = 1.0 - math.exp(-dt / 5.5)
-        fast = 1.0 - math.exp(-dt / 0.32)
-        release = max(
-            self.state.release * math.exp(-dt / 1.15),
-            release_target,
-        )
-        catharsis = max(
-            self.state.catharsis * math.exp(-dt / 0.95),
-            catharsis_target,
-        )
-        snap = max(
-            self.state.snap * math.exp(-dt / 0.48),
-            snap_target,
-        )
-        self.state = AffectiveState(
-            weight=lerp(self.state.weight, weight_target, atmosphere),
-            agitation=lerp(self.state.agitation, agitation_target, phrase),
-            cohesion=lerp(self.state.cohesion, cohesion_target, atmosphere),
-            tension=lerp(self.state.tension, tension_target, phrase),
-            openness=lerp(self.state.openness, openness_target, atmosphere),
-            release=release,
-            intimacy=lerp(self.state.intimacy, intimacy_target, atmosphere),
-            volatility=lerp(self.state.volatility, volatility_target, phrase),
-            novelty=lerp(self.state.novelty, novelty, fast),
-            fragility=lerp(self.state.fragility, fragility_target, phrase),
-            yearning=lerp(self.state.yearning, yearning_target, phrase),
-            catharsis=catharsis,
-            restraint=restraint,
-            snap=snap,
-        )
-        return self.state
-
-
-class NarrativeTracker:
-    """Interpret current gestures through recent predictability and posture."""
-
-    def __init__(self) -> None:
-        self.state = NarrativeState()
-        self._last_at = 0.0
-
-    def reset(self) -> None:
-        self.__init__()
-
-    def update(
-        self,
-        forces: AudioForces,
-        affect: AffectiveState,
-        timestamp: float,
-    ) -> NarrativeState:
-        dt = 1.0 / 16.0
-        if timestamp > 0.0 and self._last_at > 0.0 and timestamp > self._last_at:
-            dt = clamp(timestamp - self._last_at, 1.0 / 120.0, 0.35)
-        if timestamp > 0.0:
-            self._last_at = timestamp
-
-        signal_level = forces.level if forces.level >= 0.0 else forces.energy
-        predictability = clamp(
-            forces.tempo * 0.35
-            + (1.0 - forces.flux) * 0.25
-            + (1.0 - affect.volatility) * 0.40
-        )
-        activity_gate = clamp((signal_level - 0.03) / 0.20)
-        predictability *= activity_gate
-        expectation = lerp(
-            self.state.expectation,
-            predictability,
-            time_amount(0.06, dt),
-        )
-        surprise = clamp(
-            forces.transient * 0.50
-            + forces.flux * 0.55
-            + max(forces.deviations, default=0.0) * 0.35
-            + affect.snap * 0.65
-        )
-        interruption_target = clamp(self.state.expectation * surprise)
-        interruption = max(
-            self.state.interruption * math.exp(-dt / 0.45),
-            interruption_target,
-        )
-        resolution_target = clamp(
-            affect.tension * (affect.release * 0.70 + affect.catharsis * 0.45)
-        )
-        resolution = max(
-            self.state.resolution * math.exp(-dt / 1.20),
-            resolution_target,
-        )
-        expectation *= 1.0 - interruption * 0.35
-
-        self.state = NarrativeState(
-            expectation=expectation,
-            interruption=interruption,
-            resolution=resolution,
-        )
-        return self.state
-
-
-@dataclass(slots=True)
-class _AdaptiveRange:
-    floor: float = 0.0
-    ceiling: float = 0.12
-
-    def normalize(self, value: float, dt: float) -> float:
-        # The asymmetric rates preserve contrast without pumping when a source
-        # changes volume or a quiet passage follows a loud one.
-        value = max(0.0, value)
-        if value <= self.floor:
-            self.floor = value
-        else:
-            self.floor += (value - self.floor) * time_amount(0.002, dt)
-        if value >= self.ceiling:
-            self.ceiling = value
-        else:
-            self.ceiling += (value - self.ceiling) * time_amount(0.012, dt)
-        self.ceiling = max(self.ceiling, self.floor + 0.05)
-        return clamp((value - self.floor) / (self.ceiling - self.floor))
-
-
-class AudioForceMapper:
-    """Turns audio measurements into physical controls, never luminance."""
-
-    def __init__(self) -> None:
-        self._ranges = [_AdaptiveRange() for _ in range(4)]
-        self._bass = 0.0
-        self._voice = 0.0
-        self._detail = 0.0
-        self._energy = 0.0
-        self._transient = 0.0
-        self._tone = 0.5
-        self._tempo = 0.0
-        self._pulse = 0.0
-        self._rhythm_density = 0.0
-        self._last_density_onset_at = 0.0
-        self._last_tempo_onset_at = 0.0
-        self._onset_gate_until = 0.0
-        self._raw_bands = [0.0] * 8
-        self._bands = [0.0] * 8
-        self._hits = [0.0] * 8
-        self._deviation_means = [0.0] * 8
-        self._deviation_variances = [0.0004] * 8
-        self._deviation_elapsed = 0.0
-        self._deviation_initialized = False
-        self._last_frame_at = 0.0
-
-    def reset(self) -> None:
-        self.__init__()
-
-    def map(self, frame: AudioFrame, mode: str, reactivity: float) -> AudioForces:
-        timestamp = float(frame.timestamp)
-        dt = 1.0 / 22.0
-        if timestamp > 0.0 and self._last_frame_at > 0.0 and timestamp > self._last_frame_at:
-            dt = clamp(timestamp - self._last_frame_at, 1.0 / 120.0, 1.0 / 3.0)
-        if timestamp > 0.0:
-            self._last_frame_at = timestamp
-        bands = _eight_bands(frame.bands, frame.rms)
-        deviations = self._deviation_spikes(bands, dt)
-        band_total = sum(bands)
-        tone = (
-            sum(index * value for index, value in enumerate(bands))
-            / max(0.0001, band_total * 7.0)
-        )
-        flux = sum(max(0.0, current - previous) for current, previous in zip(bands, self._raw_bands)) / 8.0
-        self._raw_bands = bands[:]
-        self._tone = lerp(self._tone, tone, time_amount(0.14, dt))
-        low_raw = sum(bands[:3]) / 3.0
-        voice_raw = sum(bands[2:6]) / 4.0
-        detail_raw = max(sum(bands[5:]) / 3.0, frame.zcr * 0.72)
-        energy_raw = clamp(frame.rms)
-
-        low = self._ranges[0].normalize(low_raw, dt)
-        voice = self._ranges[1].normalize(voice_raw, dt)
-        detail = self._ranges[2].normalize(detail_raw, dt)
-        energy = self._ranges[3].normalize(energy_raw, dt)
-
-        previous_bass = self._bass
-        previous_energy = self._energy
-        self._bass = lerp(self._bass, low, time_amount(0.24, dt))
-        self._voice = lerp(self._voice, voice, time_amount(0.20, dt))
-        self._detail = lerp(self._detail, detail, time_amount(0.16, dt))
-        self._energy = lerp(self._energy, energy, time_amount(0.18, dt))
-
-        attack = clamp(frame.attack)
-        onset = max(0.0, self._bass - previous_bass) * 1.4
-        onset += max(0.0, self._energy - previous_energy) * 1.1
-        transient_target = clamp(attack * 0.92 + onset)
-        self._transient = max(self._transient * (0.58 ** (dt * 22.0)), transient_target)
-        pulse_target = clamp(transient_target * 0.70 + flux * 1.45)
-        self._pulse = max(self._pulse * (0.66 ** (dt * 22.0)), pulse_target)
-
-        # Beat tempo and rapid subdivision density are related but distinct.
-        # A short refractory gate rejects duplicate analysis frames while still
-        # accepting fast 1/16-note and machine-gun patterns. Fast events do not
-        # move the tempo anchor until enough time has elapsed to infer a beat.
-        self._rhythm_density *= math.exp(-dt / 0.42)
-        rhythm_impulse = 0.0
-        onset_cue = attack >= 0.045 or flux >= 0.035
-        onset_event = (
-            pulse_target > 0.20
-            and onset_cue
-            and timestamp > 0.0
-            and timestamp >= self._onset_gate_until
-        )
-        if onset_event:
-            rhythm_impulse = clamp(pulse_target * 0.70 + attack * 0.30)
-            density_interval = (
-                timestamp - self._last_density_onset_at
-                if self._last_density_onset_at
-                else 0.0
-            )
-            if 0.035 <= density_interval <= 0.22:
-                density_target = clamp((0.22 - density_interval) / 0.16)
-                density_target *= 0.60 + rhythm_impulse * 0.40
-                self._rhythm_density = max(self._rhythm_density, density_target)
-            self._last_density_onset_at = timestamp
-            self._onset_gate_until = timestamp + 0.035
-
-            tempo_interval = (
-                timestamp - self._last_tempo_onset_at
-                if self._last_tempo_onset_at
-                else 0.0
-            )
-            if not self._last_tempo_onset_at or tempo_interval > 1.5:
-                self._last_tempo_onset_at = timestamp
-            elif tempo_interval >= 0.14:
-                pulses_per_second = 1.0 / tempo_interval
-                tempo_target = clamp((pulses_per_second - 0.65) / 3.1)
-                self._tempo = lerp(self._tempo, tempo_target, time_amount(0.24, dt))
-                self._last_tempo_onset_at = timestamp
-        else:
-            self._tempo = lerp(self._tempo, clamp(flux * 2.8), time_amount(0.025, dt))
-
-        # Keep both a smooth spectral shape and short-lived per-band rises. The
-        # organism uses the former for shape and the latter for local impacts.
-        for index, current in enumerate(bands):
-            previous = self._bands[index]
-            rise = max(0.0, current - previous)
-            self._bands[index] = max(
-                previous * (0.72 ** (dt * 22.0)),
-                lerp(previous, current, time_amount(0.22, dt)),
-            )
-            self._hits[index] = max(
-                self._hits[index] * (0.48 ** (dt * 22.0)),
-                rise * 1.9 + attack * current * 0.28,
-            )
-
-        response = clamp(reactivity, 0.4, 2.2)
-        if mode in {"speech", "book"}:
-            bass_gain, voice_gain, detail_gain, hit_gain = 0.66, 0.92, 0.55, 0.62
-        else:
-            bass_gain, voice_gain, detail_gain, hit_gain = 0.90, 0.72, 0.78, 0.90
-
-        return AudioForces(
-            bass=clamp(self._bass * bass_gain * response),
-            voice=clamp(self._voice * voice_gain * response),
-            detail=clamp(self._detail * detail_gain * response),
-            transient=clamp(self._transient * hit_gain * response),
-            energy=clamp(self._energy * response),
-            level=clamp(frame.rms),
-            tone=clamp(self._tone),
-            tempo=clamp(self._tempo),
-            pulse=clamp(self._pulse * hit_gain * response),
-            flux=clamp(flux * response * 2.0),
-            rhythm_density=clamp(self._rhythm_density * response),
-            rhythm_impulse=clamp(rhythm_impulse * hit_gain * response),
-            bands=tuple(clamp(value * response) for value in self._bands),
-            hits=tuple(clamp(value * response) for value in self._hits),
-            deviations=tuple(clamp(value * response) for value in deviations),
-        )
-
-    def _deviation_spikes(self, bands: list[float], dt: float) -> list[float]:
-        """Measure upward surprise against a noise-aware rolling band average."""
-
-        if not self._deviation_initialized:
-            self._deviation_means = bands[:]
-            self._deviation_initialized = True
-            return [0.0] * 8
-
-        self._deviation_elapsed += dt
-        ready = self._deviation_elapsed >= DEVIATION_WARMUP_SECONDS
-        amount = 1.0 - math.exp(-dt / DEVIATION_WINDOW_SECONDS)
-        deviations = []
-        for index, current in enumerate(bands):
-            mean = self._deviation_means[index]
-            variance = self._deviation_variances[index]
-            delta = current - mean
-            noise = math.sqrt(max(0.0001, variance))
-            threshold = 0.035 + noise * 1.10
-            deviations.append(
-                clamp((delta - threshold) / (0.16 + noise)) if ready else 0.0
-            )
-            next_mean = mean + delta * amount
-            residual = current - next_mean
-            self._deviation_means[index] = next_mean
-            self._deviation_variances[index] = max(
-                0.0001,
-                variance + (residual * residual - variance) * amount,
-            )
-        return deviations
+    return SharedPosture(
+        contraction=clamp(
+            affect.tension * 0.78
+            + affect.restraint * 0.32
+            + story.expectation * 0.18
+            + story.held_pressure * 0.28
+        ),
+        fracture=clamp(
+            affect.snap * 0.72
+            + story.interruption * 0.78
+            + story.rupture * 0.55
+            + story.overdrive * 0.62
+            + affect.volatility * 0.16
+        ),
+        openness=clamp(
+            affect.release * 0.70
+            + affect.catharsis * 0.62
+            + affect.openness * 0.28
+            + story.resolution * 0.22
+            + story.overdrive * 0.18
+        ),
+        stillness=clamp(
+            affect.weight * 0.62
+            + affect.tension * 0.22
+            + story.aftermath * 0.30
+            - story.overdrive * 0.26
+            - affect.agitation * 0.14
+        ),
+        synchrony=clamp(
+            affect.cohesion * 0.66
+            + affect.intimacy * 0.24
+            + affect.yearning * 0.10
+            + story.cadence * 0.10
+            - affect.volatility * 0.42
+            - story.interruption * 0.22
+            - story.overdrive * 0.22
+        ),
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -619,6 +191,33 @@ def habitat_anchor(composition: TileComposition, index: int, phase: float) -> tu
     return x, y
 
 
+def thermal_habitat_anchor(
+    composition: TileComposition,
+    index: int,
+    phase: float,
+    role: str,
+) -> tuple[float, float]:
+    """Compress authored lanes into one readable Volume vessel."""
+
+    x, y = habitat_anchor(composition, index, phase)
+    # Pull the established habitat inward, then retain a quiet role lane so a
+    # concentrated cast does not become four interchangeable marks.
+    x = 0.5 + (x - 0.5) * 0.84
+    y = 0.52 + (y - 0.52) * 0.84
+    if role == "ballast":
+        y += 0.022
+    elif role == "listener":
+        y += 0.0
+    elif role == "glint":
+        x -= 0.012
+        y -= 0.105
+    elif role == "drifter":
+        orbit = phase * 0.42 + index * 1.71
+        x += math.cos(orbit) * 0.008
+        y += math.sin(orbit) * 0.006
+    return clamp(x, 0.10, 0.90), clamp(y, 0.10, 0.90)
+
+
 def tile_axis_scales(
     width: int,
     height: int,
@@ -709,6 +308,57 @@ MOTION_PROFILES: dict[str, MotionProfile] = {
 
 
 @dataclass(slots=True, frozen=True)
+class BehaviorProfile:
+    """One listening context's physical interpretation of the same audio."""
+
+    name: str
+    active_bodies: int
+    bass_gain: float
+    voice_gain: float
+    detail_gain: float
+    transient_gain: float
+    tempo_gain: float
+    rhythm_gain: float
+    flux_gain: float
+    pressure_wave_gain: float
+
+
+LISTENING_BEHAVIORS: dict[str, BehaviorProfile] = {
+    "podcast": BehaviorProfile("podcast", 2, 0.35, 1.00, 0.55, 0.14, 0.08, 0.05, 0.45, 0.0),
+    "radio": BehaviorProfile("radio", 3, 0.48, 0.62, 0.42, 0.22, 0.32, 0.20, 0.32, 0.22),
+    "music": BehaviorProfile("music", 4, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00),
+    "microphone": BehaviorProfile("microphone", 1, 0.08, 1.00, 0.34, 0.10, 0.05, 0.04, 0.24, 0.0),
+}
+
+
+def behavior_for_context(context: str) -> BehaviorProfile:
+    return LISTENING_BEHAVIORS.get(context, LISTENING_BEHAVIORS["music"])
+
+
+def apply_behavior_profile(forces: AudioForces, profile: BehaviorProfile) -> AudioForces:
+    """Scale physical forces without reinterpreting or re-analyzing the audio."""
+
+    def scaled(values: tuple[float, ...], gain: float) -> tuple[float, ...]:
+        return tuple(clamp(value * gain) for value in values)
+
+    return replace(
+        forces,
+        bass=clamp(forces.bass * profile.bass_gain),
+        voice=clamp(forces.voice * profile.voice_gain),
+        detail=clamp(forces.detail * profile.detail_gain),
+        transient=clamp(forces.transient * profile.transient_gain),
+        tempo=clamp(forces.tempo * profile.tempo_gain),
+        pulse=clamp(forces.pulse * profile.transient_gain),
+        flux=clamp(forces.flux * profile.flux_gain),
+        rhythm_density=clamp(forces.rhythm_density * profile.rhythm_gain),
+        rhythm_impulse=clamp(forces.rhythm_impulse * profile.transient_gain),
+        bands=scaled(forces.bands, max(profile.bass_gain, profile.voice_gain, profile.detail_gain)),
+        hits=scaled(forces.hits, profile.transient_gain),
+        deviations=scaled(forces.deviations, profile.transient_gain),
+    )
+
+
+@dataclass(slots=True, frozen=True)
 class BodyCharacter:
     """An authored body identity that persists across every tile habitat."""
 
@@ -721,15 +371,26 @@ class BodyCharacter:
     voice: float
     detail: float
     deformation: float
+    volume_width: float
+    volume_height: float
+    volume_lobe_size: float
+    volume_lobe_offset: float
+    volume_core_shape: str
+    volume_lobe_shape: str
+    turn: float
 
 
 BODY_CHARACTERS: tuple[BodyCharacter, ...] = (
-    BodyCharacter("ballast", 1, 0.70, 1.35, 0.70, 1.35, 0.35, 0.25, 0.78),
-    BodyCharacter("listener", 3, 0.50, 1.00, 0.96, 0.55, 1.40, 0.58, 1.00),
-    BodyCharacter("glint", 6, 0.18, 0.64, 1.24, 0.22, 0.58, 1.50, 1.34),
-    BodyCharacter("drifter", 4, 0.36, 0.88, 1.06, 0.62, 0.82, 0.82, 0.94),
-    BodyCharacter("echo", 2, 0.38, 0.82, 1.10, 0.72, 0.92, 0.62, 1.04),
-    BodyCharacter("spark", 7, 0.23, 0.58, 1.30, 0.18, 0.48, 1.62, 1.42),
+    # Each actor has its own stable volume anatomy as well as its audio role.
+    # The values stay within the existing Volume bounds, so identity does not
+    # purchase more samples. Proportion, a persistent soft asymmetry, and
+    # lobe placement distinguish roles without turning them into hard icons.
+    BodyCharacter("ballast", 1, 0.70, 1.35, 0.70, 1.35, 0.35, 0.25, 0.78, 1.14, 0.78, 0.54, 0.72, "organic", "organic", 0.58),
+    BodyCharacter("listener", 3, 0.50, 1.00, 0.96, 0.55, 1.40, 0.58, 1.00, 0.82, 1.18, 0.36, 0.62, "organic", "organic", 0.82),
+    BodyCharacter("glint", 6, 0.18, 0.64, 1.24, 0.22, 0.58, 1.50, 1.34, 0.66, 0.72, 0.58, 1.04, "organic", "organic", 1.42),
+    BodyCharacter("drifter", 4, 0.36, 0.88, 1.06, 0.62, 0.82, 0.82, 0.94, 0.96, 0.98, 0.45, 0.88, "organic", "organic", 1.00),
+    BodyCharacter("echo", 2, 0.38, 0.82, 1.10, 0.72, 0.92, 0.62, 1.04, 1.02, 0.88, 0.48, 0.94, "organic", "organic", 0.76),
+    BodyCharacter("spark", 7, 0.23, 0.58, 1.30, 0.18, 0.48, 1.62, 1.42, 0.58, 0.64, 0.62, 1.10, "organic", "organic", 1.62),
 )
 
 
@@ -744,6 +405,18 @@ class Body:
     phase: float
     band: int
     character: BodyCharacter
+    # Depth is normalized with 0.0 at the back of the vessel and 1.0 nearest
+    # the viewer. It deliberately remains separate from the planar habitat:
+    # collisions and anchors stay legible in a small terminal tile while the
+    # renderers can project a modest sense of foreground and background.
+    z: float = 0.5
+    vz: float = 0.0
+    yaw: float = 0.0
+    pitch: float = 0.0
+    roll: float = 0.0
+    angular_yaw: float = 0.0
+    angular_pitch: float = 0.0
+    angular_roll: float = 0.0
     presence: float = 0.0
     stretch_x: float = 1.0
     stretch_y: float = 1.0
@@ -755,6 +428,31 @@ class Body:
     afterglow: float = 0.0
     spike: float = 0.0
     impact_angle: float = 0.0
+    scar: float = 0.0
+    scar_angle: float = 0.0
+    # Thermal state is deliberately small and persistent.  It gives the
+    # Volume material a lava-lamp grammar without a cellular fluid solver.
+    thermal_heat: float = 0.22
+    thermal_buoyancy: float = 0.0
+    thermal_viscosity: float = 0.90
+    adhesion: float = 0.0
+    bridge_strength: float = 0.0
+    bridge_angle: float = 0.0
+    thermal_active: bool = False
+    flow_memory_x: float = 0.0
+    flow_memory_y: float = 0.0
+    pressure_memory: float = 0.0
+    speech_flow: float = 0.0
+    speech_pulse: float = 0.0
+    listening: float = 0.0
+    # Fluid's surface is allowed a small, persistent wave memory.  This is
+    # intentionally separate from position and Volume's thermal state: a
+    # hit travels around an existing contour instead of moving the organism
+    # or rebuilding it from raw capture pixels.
+    surface_ripple: float = 0.0
+    surface_ripple_angle: float = 0.0
+    surface_ripple_phase: float = 0.0
+    surface_ripples_active: bool = False
 
 
 @dataclass(slots=True)
@@ -768,6 +466,31 @@ class PressureWave:
     speed: float
 
 
+@dataclass(slots=True)
+class ScarState:
+    """Bounded residue of a credible phrase rupture, not an emotion label."""
+
+    shared: float = 0.0
+    origin_x: float = 0.5
+    origin_y: float = 0.5
+    last_rupture: float = 0.0
+    recovery_seconds: float = 0.0
+
+
+@dataclass(slots=True)
+class SpeechState:
+    """Bounded radio-speech posture; it contains no language information."""
+
+    speaker_index: int = 1
+    candidate_index: int = 1
+    candidate_seconds: float = 0.0
+    voice_flow: float = 0.0
+    cadence_hold: float = 0.0
+    pause_release: float = 0.0
+    syllable: float = 0.0
+    last_signal: float = 0.0
+
+
 class AcousticOrganism:
     """Persistent bodies whose motion is disturbed by semantic audio forces."""
 
@@ -778,6 +501,9 @@ class AcousticOrganism:
         self.phase = 0.0
         self._last_event = 0.0
         self._wave_cooldown = 0.0
+        self.scar_state = ScarState()
+        self.speech_state = SpeechState()
+        self.dominant_bridge: tuple[int, int] | None = None
         self.composition = compose_tile(40, 18, body_limit)
         self.ensure_capacity(body_limit)
 
@@ -788,6 +514,9 @@ class AcousticOrganism:
         self.phase = 0.0
         self._last_event = 0.0
         self._wave_cooldown = 0.0
+        self.scar_state = ScarState()
+        self.speech_state = SpeechState()
+        self.dominant_bridge = None
         self.ensure_capacity(limit)
 
     def ensure_capacity(self, count: int) -> None:
@@ -798,15 +527,30 @@ class AcousticOrganism:
             angle = self._random.uniform(0.0, math.tau)
             anchor_x, anchor_y = _HABITAT_ANCHORS["basin"][index % 6]
             radius = 0.10 + character.size * 0.075
+            body_x = anchor_x + self._random.uniform(-0.025, 0.025)
+            body_y = anchor_y + self._random.uniform(-0.025, 0.025)
+            body_vx = math.cos(angle) * self._random.uniform(0.015, 0.035)
+            body_vy = math.sin(angle) * self._random.uniform(0.015, 0.035)
+            # Keep the established random sequence for the planar cast. Depth
+            # is instead derived from its persistent authored phase.
+            body_phase = self._random.uniform(0.0, math.tau)
             self.bodies.append(
                 Body(
-                    x=anchor_x + self._random.uniform(-0.025, 0.025),
-                    y=anchor_y + self._random.uniform(-0.025, 0.025),
-                    vx=math.cos(angle) * self._random.uniform(0.015, 0.035),
-                    vy=math.sin(angle) * self._random.uniform(0.015, 0.035),
+                    x=body_x,
+                    y=body_y,
+                    vx=body_vx,
+                    vy=body_vy,
+                    z=0.50 + math.sin(body_phase * 1.43 + index * 0.71) * 0.28,
+                    vz=math.cos(body_phase * 0.91 + index) * 0.018,
+                    yaw=body_phase,
+                    pitch=body_phase * 0.63,
+                    roll=body_phase * 0.41,
+                    angular_yaw=0.16 * character.turn,
+                    angular_pitch=0.09 * character.turn,
+                    angular_roll=0.07 * character.turn,
                     radius=radius,
                     base_radius=radius,
-                    phase=self._random.uniform(0.0, math.tau),
+                    phase=body_phase,
                     band=character.band,
                     character=character,
                     impact_angle=self._random.uniform(0.0, math.tau),
@@ -844,7 +588,9 @@ class AcousticOrganism:
             body.x = clamp(body.x + shift_x, 0.06, 0.94)
             body.y = clamp(body.y + shift_y, 0.06, 0.94)
 
-    def _advance_pressure_waves(self, dt: float, forces: AudioForces) -> None:
+    def _advance_pressure_waves(
+        self, dt: float, forces: AudioForces, gain: float = 1.0
+    ) -> None:
         """Emit on rising events, then let pressure cross the vessel over time."""
 
         self._wave_cooldown = max(0.0, self._wave_cooldown - dt)
@@ -853,7 +599,7 @@ class AcousticOrganism:
             forces.pulse * 0.78,
             forces.flux * 0.46,
             forces.rhythm_impulse * 0.70,
-        )
+        ) * gain
         rising = event > max(0.18, self._last_event + 0.055)
         if rising and self._wave_cooldown <= 0.0:
             # Pitch chooses an edge, while phase prevents repeated beats from
@@ -880,6 +626,122 @@ class AcousticOrganism:
                 alive.append(wave)
         self.pressure_waves = alive
 
+    def _advance_scars(
+        self,
+        dt: float,
+        forces: AudioForces,
+        affect: AffectiveState,
+        story: NarrativeState,
+        active_count: int,
+        enabled: bool,
+    ) -> None:
+        """Mark credible ruptures; fade only after demonstrated new stability."""
+
+        state = self.scar_state
+        if not enabled:
+            state.last_rupture = story.rupture
+            return
+
+        rupture_rise = max(0.0, story.rupture - state.last_rupture)
+        credible = rupture_rise >= 0.045 and story.held_pressure >= 0.12
+        if credible:
+            state.shared = max(state.shared, clamp(story.rupture))
+            source = min(2, max(0, active_count - 1))
+            state.origin_x = self.bodies[source].x
+            state.origin_y = self.bodies[source].y
+            role_residue = {
+                "ballast": 0.62,
+                "listener": 0.92,
+                "glint": 1.34,
+                "drifter": 0.84,
+            }
+            for body in self.bodies[:active_count]:
+                local_band = forces.bands[body.band % len(forces.bands)] if forces.bands else 0.0
+                amount = rupture_rise * (0.42 + role_residue.get(body.character.name, 0.75) * 0.58)
+                body.scar = max(body.scar, clamp(amount * (0.78 + local_band * 0.22)))
+                away_x = body.x - state.origin_x
+                away_y = body.y - state.origin_y
+                body.scar_angle = (
+                    math.atan2(away_y, away_x)
+                    if math.hypot(away_x, away_y) > 0.025
+                    else body.phase + math.pi * 0.5
+                )
+
+        signal_level = forces.level if forces.level >= 0.0 else forces.energy
+        stable_pattern = (
+            story.cadence >= 0.55
+            and story.rupture <= 0.08
+            and story.interruption <= 0.12
+            and story.overdrive <= 0.18
+            and affect.volatility <= 0.28
+            and signal_level >= 0.12
+            and (story.resolution >= 0.10 or affect.openness >= 0.20)
+        )
+        state.recovery_seconds = (
+            min(4.0, state.recovery_seconds + dt)
+            if stable_pattern
+            else 0.0
+        )
+        # A few seconds of audible, low-volatility cadence proves that the
+        # piece found a different footing.  Empty silence cannot make the
+        # residue disappear; that would turn a scar back into an afterglow.
+        if state.recovery_seconds >= 2.4:
+            state.shared *= math.exp(-dt / 10.0)
+            for body in self.bodies[:active_count]:
+                body.scar *= math.exp(-dt / 11.0)
+        state.last_rupture = story.rupture
+
+    def _advance_speech(
+        self,
+        dt: float,
+        forces: AudioForces,
+        behavior: BehaviorProfile | None,
+        active_count: int,
+    ) -> SpeechState:
+        """Give Radio one stable voice carrier and a visible pause grammar."""
+
+        state = self.speech_state
+        if behavior is None or behavior.name != "radio" or active_count <= 0:
+            state.voice_flow *= math.exp(-3.0 * dt)
+            state.cadence_hold *= math.exp(-2.2 * dt)
+            state.pause_release *= math.exp(-2.0 * dt)
+            state.syllable *= math.exp(-7.0 * dt)
+            return state
+
+        mid_bands = forces.bands[2:5] if len(forces.bands) >= 5 else forces.bands
+        mid_energy = sum(mid_bands) / max(1, len(mid_bands))
+        signal = clamp(forces.voice * 0.72 + mid_energy * 0.28)
+        rise = max(0.0, signal - state.last_signal)
+        drop = max(0.0, state.last_signal - signal)
+        state.voice_flow = lerp(state.voice_flow, signal, dt * 6.2)
+        state.syllable = max(state.syllable * math.exp(-8.5 * dt), clamp(rise * 3.2 + forces.detail * 0.16))
+        state.pause_release = max(state.pause_release * math.exp(-1.9 * dt), clamp(drop * 2.2))
+        if state.voice_flow >= 0.12:
+            state.cadence_hold = min(1.0, state.cadence_hold + dt * 0.70)
+        else:
+            state.cadence_hold *= math.exp(-2.1 * dt)
+        state.last_signal = signal
+
+        candidate = min(
+            range(active_count),
+            key=lambda item: abs(self.bodies[item].band / 7.0 - forces.tone),
+        )
+        if candidate == state.speaker_index:
+            state.candidate_index = candidate
+            state.candidate_seconds = 0.0
+        elif candidate == state.candidate_index and signal >= 0.16:
+            state.candidate_seconds += dt
+        else:
+            state.candidate_index = candidate
+            state.candidate_seconds = 0.0
+        # A voice handoff needs sustained timbral evidence. It can never
+        # flicker between bodies at syllable speed.
+        if state.candidate_seconds >= 2.2:
+            state.speaker_index = state.candidate_index
+            state.candidate_seconds = 0.0
+        state.speaker_index = min(active_count - 1, state.speaker_index)
+        return state
+
     def update(
         self,
         dt: float,
@@ -891,9 +753,18 @@ class AcousticOrganism:
         cell_aspect: float = CELL_ASPECT,
         affective: AffectiveState | None = None,
         narrative: NarrativeState | None = None,
+        behavior: BehaviorProfile | None = None,
+        embody_posture: bool = False,
+        surface_ripples: bool = False,
     ) -> TileComposition:
         dt = clamp(dt, 1.0 / 120.0, 1.0 / 12.0)
         requested = max(1, min(10, lava_config.blobs))
+        if behavior is not None:
+            requested = min(requested, behavior.active_bodies)
+        if embody_posture:
+            # Experimental Volume keeps a fixed four-body interaction budget.
+            # Fluid and Text retain the existing tile-dependent population.
+            requested = min(requested, VOLUME_BODY_LIMIT)
         self.ensure_capacity(requested)
         self.composition = compose_tile(width, height, requested)
         motion = MOTION_PROFILES.get(motion_name, MOTION_PROFILES["neutral"])
@@ -903,6 +774,7 @@ class AcousticOrganism:
         radius_max = clamp(lava_config.radius_max, radius_min, 0.35)
         affect = affective or AffectiveState()
         story = narrative or NarrativeState()
+        posture = shared_posture(affect, story) if embody_posture else SharedPosture()
         self.phase += dt * (
             0.42
             + drift * 0.72
@@ -915,7 +787,11 @@ class AcousticOrganism:
             + story.interruption * 0.10
             + story.resolution * 0.04
         )
-        self._advance_pressure_waves(dt, forces)
+        self._advance_pressure_waves(
+            dt,
+            forces,
+            behavior.pressure_wave_gain if behavior is not None else 1.0,
+        )
         center_x = 0.5 + math.sin(self.phase * 0.37) * 0.035
         center_y = (
             0.53
@@ -924,16 +800,34 @@ class AcousticOrganism:
             - affect.openness * 0.014
             - affect.yearning * 0.012
         )
+        if embody_posture:
+            # Volume's vessel is intentionally quieter and more central than
+            # the broad daily habitats, while still breathing with the phrase.
+            center_x = 0.5 + math.sin(self.phase * 0.37) * 0.014
+            center_y = 0.52 + math.cos(self.phase * 0.29) * 0.012
         axis_x, axis_y = tile_axis_scales(width, height, cell_aspect)
 
         # Resolve overlap as acceleration rather than teleporting bodies. This
         # keeps identity and momentum intact through resize recomposition.
         separation_x = [0.0] * len(self.bodies)
         separation_y = [0.0] * len(self.bodies)
+        adhesion_x = [0.0] * len(self.bodies)
+        adhesion_y = [0.0] * len(self.bodies)
+        bridge_strength = [0.0] * len(self.bodies)
+        bridge_angle = [0.0] * len(self.bodies)
+        previous_bridge = self.dominant_bridge if embody_posture else None
+        dominant_bridge: tuple[int, int, float, float, float, float] | None = None
         active_count = self.composition.active_bodies
+        speech = self._advance_speech(dt, forces, behavior, active_count)
+        radio_speech = behavior is not None and behavior.name == "radio"
+        speaker_x = self.bodies[speech.speaker_index].x if radio_speech else 0.5
+        speaker_y = self.bodies[speech.speaker_index].y if radio_speech else 0.5
         impact_target = min(
             range(active_count),
             key=lambda item: abs(self.bodies[item].band / 7.0 - forces.tone),
+        )
+        self._advance_scars(
+            dt, forces, affect, story, active_count, embody_posture
         )
         for left in range(active_count):
             for right in range(left + 1, active_count):
@@ -943,18 +837,68 @@ class AcousticOrganism:
                 dy = (second.y - first.y) / axis_y
                 distance = math.hypot(dx, dy)
                 preferred = (first.radius + second.radius) * 1.04
-                if distance >= preferred:
-                    continue
                 if distance < 0.0001:
                     angle = first.phase - second.phase
                     nx, ny = math.cos(angle), math.sin(angle)
                 else:
                     nx, ny = dx / distance, dy / distance
-                pressure = (preferred - distance) * 0.86
-                separation_x[left] -= nx * pressure * axis_x
-                separation_y[left] -= ny * pressure * axis_y
-                separation_x[right] += nx * pressure * axis_x
-                separation_y[right] += ny * pressure * axis_y
+                if distance < preferred:
+                    # Retain readable core spacing for every pair. The chosen
+                    # bridge is expressed through its existing lobe and a
+                    # bounded attraction below, rather than allowing a warm
+                    # cluster to collapse into an indistinct pile.
+                    pressure = (preferred - distance) * 1.15
+                    separation_x[left] -= nx * pressure * axis_x
+                    separation_y[left] -= ny * pressure * axis_y
+                    separation_x[right] += nx * pressure * axis_x
+                    separation_y[right] += ny * pressure * axis_y
+
+                if embody_posture and distance < preferred * 1.72:
+                    # At most six pair interactions for the four visible
+                    # bodies. This is a bounded proximity cue, not a field
+                    # pass: warm nearby bodies draw together and lend their
+                    # existing lobe toward each other as a soft bridge.
+                    proximity = clamp(
+                        (preferred * 1.72 - distance) / max(0.001, preferred * 0.58)
+                    )
+                    warmth = clamp((first.thermal_heat + second.thermal_heat) * 0.5)
+                    # Cool wax separates instead of retaining a weak bridge
+                    # forever just because its centers remain close.
+                    bridge_heat = clamp((warmth - 0.22) / 0.78)
+                    adhesion = proximity * bridge_heat * (
+                        0.48 + posture.synchrony * 0.52
+                    )
+                    selection_strength = adhesion + (
+                        0.035 if previous_bridge == (left, right) else 0.0
+                    )
+                    if adhesion >= 0.06 and (
+                        dominant_bridge is None
+                        or selection_strength > dominant_bridge[5]
+                    ):
+                        dominant_bridge = (
+                            left,
+                            right,
+                            adhesion,
+                            nx,
+                            ny,
+                            selection_strength,
+                        )
+
+        # A single pair may bridge in one frame. This prevents a compact cast
+        # from turning into a permanent unreadable knot while keeping pairwise
+        # work fixed at at most six comparisons.
+        self.dominant_bridge = None
+        if dominant_bridge is not None:
+            left, right, adhesion, nx, ny, _ = dominant_bridge
+            pull = adhesion * 0.055
+            adhesion_x[left] = nx * pull * axis_x
+            adhesion_y[left] = ny * pull * axis_y
+            adhesion_x[right] = -nx * pull * axis_x
+            adhesion_y[right] = -ny * pull * axis_y
+            bridge_strength[left] = bridge_strength[right] = adhesion
+            bridge_angle[left] = math.atan2(ny, nx)
+            bridge_angle[right] = math.atan2(-ny, -nx)
+            self.dominant_bridge = (left, right)
 
         mean_vx = sum(body.vx for body in self.bodies[:active_count]) / active_count
         mean_vy = sum(body.vy for body in self.bodies[:active_count]) / active_count
@@ -966,12 +910,26 @@ class AcousticOrganism:
             center_gain = 0.24 if self.composition.habitat == "micro" else 0.16
             group_pull_x = (0.5 - mass_x) * center_gain
             group_pull_y = (center_y - mass_y) * center_gain
+        thermal_centroid_x = (0.5 - mass_x) * 0.045 if embody_posture else 0.0
+        thermal_centroid_y = (center_y - mass_y) * 0.045 if embody_posture else 0.0
 
         for index, body in enumerate(self.bodies):
             active = index < self.composition.active_bodies
             body.presence = lerp(body.presence, 1.0 if active else 0.0, dt * 2.8)
             if body.presence < 0.005 and not active:
                 continue
+
+            speaking = radio_speech and index == speech.speaker_index and active
+            body.speech_flow = lerp(
+                body.speech_flow, speech.voice_flow if speaking else 0.0, dt * 5.2
+            )
+            body.speech_pulse = lerp(
+                body.speech_pulse, speech.syllable if speaking else 0.0, dt * 8.0
+            )
+            if radio_speech and active and not speaking:
+                body.listening = lerp(body.listening, speech.voice_flow, dt * 3.6)
+            else:
+                body.listening *= math.exp(-3.6 * dt)
 
             # Each body listens most closely to one band. Broad forces move the
             # whole population; band affinity gives individual bodies character.
@@ -985,6 +943,55 @@ class AcousticOrganism:
             band_position = body.band / max(1, len(forces.bands) - 1)
             pitch_affinity = max(0.16, 1.0 - abs(band_position - forces.tone) * 1.7)
             pitch_drive = local_band * pitch_affinity
+            speech_pull_x = 0.0
+            speech_pull_y = 0.0
+            speech_yaw = 0.0
+            speech_depth = 0.0
+            if speaking:
+                # A speaking body breathes forward and carries syllable-scale
+                # pressure without becoming a literal mouth animation.
+                speech_depth = speech.voice_flow * 0.060
+                speech_pull_x = (center_x - body.x) * speech.voice_flow * 0.045
+                speech_pull_y = (center_y - body.y) * speech.voice_flow * 0.028
+                speech_yaw = math.sin(body.phase + self.phase * 1.7) * speech.cadence_hold * 0.24
+            elif radio_speech and active:
+                heading = math.atan2(speaker_y - body.y, speaker_x - body.x)
+                speech_yaw = math.sin(heading - body.yaw) * body.listening * 0.48
+                speech_pull_x = (speaker_x - body.x) * body.listening * 0.018
+                speech_pull_y = (speaker_y - body.y) * body.listening * 0.018
+            if embody_posture:
+                body.thermal_active = True
+                # Heat is phrase-led: a passage has to hold pressure before a
+                # body truly rises. Raw attacks only ripple the surface.
+                heat_target = clamp(
+                    0.08
+                    + forces.bass * 0.46
+                    + forces.energy * 0.16
+                    + local_band * 0.12
+                    + story.held_pressure * 0.24
+                    + story.cadence * 0.08
+                    - story.aftermath * 0.08
+                    - affect.release * 0.04
+                )
+                heat_rate = 0.68 if heat_target > body.thermal_heat else 0.34
+                body.thermal_heat = lerp(body.thermal_heat, heat_target, dt * heat_rate)
+                body.thermal_viscosity = lerp(
+                    body.thermal_viscosity,
+                    0.62 + (1.0 - body.thermal_heat) * 0.34,
+                    dt * 0.90,
+                )
+                lift_target = -(
+                    body.thermal_heat - 0.34
+                ) * 0.28 / body.character.mass
+                body.thermal_buoyancy = lerp(
+                    body.thermal_buoyancy, lift_target, dt * 0.92
+                )
+                body.adhesion = lerp(body.adhesion, bridge_strength[index], dt * 2.4)
+                if bridge_strength[index] >= body.bridge_strength:
+                    body.bridge_angle = bridge_angle[index]
+                body.bridge_strength = lerp(
+                    body.bridge_strength, bridge_strength[index], dt * 3.0
+                )
             event = (
                 max(local_hit, forces.transient, forces.rhythm_impulse * 0.72)
                 if index == impact_target
@@ -1001,9 +1008,38 @@ class AcousticOrganism:
                 - affect.yearning * 0.24,
             )
             body.afterglow = max(body.afterglow * math.exp(-memory_decay * dt), event)
-            body.spike = max(body.spike * math.exp(-8.4 * dt), spike_event)
+            if surface_ripples:
+                # Fluid is waxy by default: deviations become the input to a
+                # travelling surface wave, not a fresh mountain-shaped tooth
+                # on every capture frame.
+                body.spike = max(body.spike * math.exp(-10.5 * dt), spike_event * 0.10)
+            else:
+                body.spike = max(body.spike * math.exp(-8.4 * dt), spike_event)
             if spike_event > max(previous_afterglow, previous_spike) + 0.08:
                 body.impact_angle = body.phase * 1.9 + self.phase * 1.3
+            body.surface_ripples_active = surface_ripples
+            if surface_ripples:
+                # Keep the impulse local and let it coast around the contour.
+                # Raw detail still colors the body, but no longer has to make
+                # the edge teleport cell by cell to feel present.
+                ripple_impulse = event * 0.78 + spike_event * 0.34
+                previous_ripple = body.surface_ripple
+                body.surface_ripple = max(
+                    body.surface_ripple * math.exp(-3.0 * dt), ripple_impulse
+                )
+                if ripple_impulse > previous_ripple + 0.06:
+                    body.surface_ripple_angle = body.impact_angle
+                    body.surface_ripple_phase = 0.0
+                else:
+                    body.surface_ripple_phase += dt * (
+                        2.1 + forces.tempo * 3.0 + forces.rhythm_density * 1.4
+                    )
+            else:
+                body.surface_ripple *= math.exp(-4.0 * dt)
+                body.surface_ripples_active = False
+            fluid_motion_gain = 0.24 if surface_ripples else 1.0
+            motion_event = event * fluid_motion_gain
+            motion_spike = body.spike * fluid_motion_gain
             angle = self.phase * (0.62 + index * 0.035) + body.phase
             current_x, current_y = circulation_at(
                 self.composition,
@@ -1022,6 +1058,73 @@ class AcousticOrganism:
             dy = body.y - center_y
             distance = max(0.08, math.hypot(dx, dy))
             outward_x, outward_y = dx / distance, dy / distance
+            group_dx = mass_x - body.x
+            group_dy = mass_y - body.y
+            personal_axis = body.phase + index * 1.618
+            role_pull_x = group_dx * posture.contraction * 0.075
+            role_pull_y = group_dy * posture.contraction * 0.075
+            role_open_x = -group_dx * posture.openness * 0.090
+            role_open_y = -group_dy * posture.openness * 0.090
+            role_depth = 0.0
+            role_yaw = 0.0
+            role_pitch = 0.0
+            role_roll = 0.0
+            if body.character.name == "ballast":
+                # Weight is carried deep in the vessel instead of translated
+                # into a generic group pulse.
+                role_depth = -posture.stillness * 0.055 - posture.contraction * 0.030
+                role_open_x *= 0.35
+                role_open_y *= 0.35
+                role_yaw = math.sin(personal_axis) * posture.fracture * 0.42
+                role_pitch = posture.fracture * 0.34
+            elif body.character.name == "listener":
+                # The listener resolves toward the group without becoming a
+                # literal waypoint: its rotation, rather than its position,
+                # carries the attention.
+                heading = math.atan2(group_dy, group_dx)
+                heading_error = math.sin(heading - body.yaw)
+                role_yaw = heading_error * posture.synchrony * 0.72
+                role_roll = math.cos(personal_axis) * posture.fracture * 0.56
+                role_open_x *= 0.62
+                role_open_y *= 0.62
+            elif body.character.name == "glint":
+                # Interruptions reach the glint first and make it break from
+                # the shared cadence before the larger organisms follow.
+                role_yaw = math.sin(personal_axis) * posture.fracture * 1.34
+                role_pitch = math.cos(personal_axis) * posture.fracture * 0.96
+                role_roll = math.sin(personal_axis * 1.7) * posture.fracture * 1.42
+                role_open_x *= 1.16
+                role_open_y *= 1.16
+            elif body.character.name == "drifter":
+                # Release lets the drifter choose distance sooner than the
+                # rest of the group, preserving an independent mind.
+                role_open_x *= 1.72
+                role_open_y *= 1.72
+                role_yaw = math.sin(personal_axis) * posture.fracture * 0.88
+                role_roll = math.cos(personal_axis) * posture.fracture * 0.94
+            if embody_posture and body.scar > 0.0:
+                # A scar changes formation continuously. It is not afterglow:
+                # without new stable music, the altered relationship remains.
+                scar_push = body.scar * (0.018 + self.scar_state.shared * 0.018)
+                role_open_x += math.cos(body.scar_angle) * scar_push
+                role_open_y += math.sin(body.scar_angle) * scar_push
+                if body.character.name == "ballast":
+                    role_depth -= body.scar * 0.050
+                    role_pitch += body.scar * 0.24
+                elif body.character.name == "listener":
+                    heading = math.atan2(
+                        self.scar_state.origin_y - body.y,
+                        self.scar_state.origin_x - body.x,
+                    )
+                    role_yaw += math.sin(heading - body.yaw) * body.scar * 0.92
+                elif body.character.name == "glint":
+                    role_yaw += math.sin(body.scar_angle) * body.scar * 1.08
+                    role_roll += math.cos(body.scar_angle) * body.scar * 1.20
+                elif body.character.name == "drifter":
+                    role_open_x += math.cos(body.scar_angle) * body.scar * 0.030
+                    role_open_y += math.sin(body.scar_angle) * body.scar * 0.030
+            role_depth += speech_depth
+            role_yaw += speech_yaw
             voice_swirl_x = -dy * forces.voice * motion.audio_push * body.character.voice
             voice_swirl_y = dx * forces.voice * motion.audio_push * body.character.voice
             bass_push = (
@@ -1039,27 +1142,39 @@ class AcousticOrganism:
             rhythm_drive = forces.rhythm_density * (0.32 + forces.energy * 0.68)
             rhythm_phase = self.phase * (6.0 + forces.rhythm_density * 10.0) + body.phase * 1.7
             rhythm_wave = math.sin(rhythm_phase)
-            emotional_cohesion = (
-                affect.cohesion * 0.018
-                + affect.intimacy * 0.022
-                + affect.yearning * 0.008
-            )
-            emotional_contraction = affect.tension * 0.014 + story.expectation * 0.008
-            emotional_release = (
-                affect.release * 0.045
-                + affect.catharsis * 0.065
-                + affect.openness * 0.010
-                + affect.snap * 0.080
-                + story.interruption * 0.050
-                + story.resolution * 0.035
-            )
+            if embody_posture:
+                emotional_cohesion = posture.synchrony * 0.030
+                emotional_contraction = posture.contraction * 0.018
+                emotional_release = posture.openness * 0.070 + posture.fracture * 0.040
+            else:
+                # Preserve the established behavior for Fluid and Text. The
+                # new shared-posture layer is intentionally Volume-only.
+                emotional_cohesion = (
+                    affect.cohesion * 0.018
+                    + affect.intimacy * 0.022
+                    + affect.yearning * 0.008
+                )
+                emotional_contraction = affect.tension * 0.014 + story.expectation * 0.008
+                emotional_release = (
+                    affect.release * 0.045
+                    + affect.catharsis * 0.065
+                    + affect.openness * 0.010
+                    + affect.snap * 0.080
+                    + story.interruption * 0.050
+                    + story.resolution * 0.035
+                )
             center_pull_x = -dx * (
                 0.035 + forces.energy * 0.012 + emotional_cohesion + emotional_contraction
             )
             center_pull_y = -dy * (
                 0.050 + forces.energy * 0.012 + emotional_cohesion + emotional_contraction
             )
-            anchor_x, anchor_y = habitat_anchor(self.composition, index, self.phase)
+            if embody_posture:
+                anchor_x, anchor_y = thermal_habitat_anchor(
+                    self.composition, index, self.phase, body.character.name
+                )
+            else:
+                anchor_x, anchor_y = habitat_anchor(self.composition, index, self.phase)
             habitat_pull = 0.052 if self.composition.habitat != "micro" else 0.090
             home_x = (anchor_x - body.x) * habitat_pull
             home_y = (anchor_y - body.y) * habitat_pull
@@ -1070,6 +1185,7 @@ class AcousticOrganism:
                 * (0.018 + forces.bass * 0.035)
                 / body.character.mass
             )
+            thermal_lift = body.thermal_buoyancy if embody_posture else 0.0
             body_scale = 1.0 / body.character.mass
 
             wave_x = 0.0
@@ -1108,8 +1224,11 @@ class AcousticOrganism:
                 curl_x * acceleration * self.composition.horizontal_flow
                 + outward_x * bass_push * 0.110 * body_scale
                 + voice_swirl_x * 0.125
-                + hit_direction * (event + forces.pulse * 0.12) * 0.140 * body_scale
-                + math.cos(body.impact_angle) * body.spike * 0.105 * body_scale
+                + hit_direction
+                * (motion_event + forces.pulse * 0.12 * fluid_motion_gain)
+                * 0.140
+                * body_scale
+                + math.cos(body.impact_angle) * motion_spike * 0.105 * body_scale
                 + math.cos(pitch_direction) * pitch_drive * 0.082 * body.character.detail
                 + math.cos(angle + math.pi * 0.5)
                 * tempo_wave
@@ -1120,19 +1239,28 @@ class AcousticOrganism:
                 + center_pull_x
                 + home_x
                 + separation_x[index]
+                + adhesion_x[index]
                 + (mean_vx - body.vx) * 0.042
                 + group_pull_x
+                + thermal_centroid_x
                 + wave_x * motion.audio_push * 0.135 * body_scale
                 + outward_x * emotional_release
+                + role_pull_x
+                + role_open_x
+                + speech_pull_x
             ) * dt
             body.vy += (
                 curl_y * acceleration * self.composition.vertical_flow
                 + thermal_flow
+                + thermal_lift
                 + outward_y * bass_push * 0.065 * body_scale
                 + forces.bass * body.character.bass * 0.028
                 + voice_swirl_y * 0.125
-                + math.cos(body.phase * 1.37 + self.phase) * event * 0.140 * body_scale
-                + math.sin(body.impact_angle) * body.spike * 0.105 * body_scale
+                + math.cos(body.phase * 1.37 + self.phase)
+                * motion_event
+                * 0.140
+                * body_scale
+                + math.sin(body.impact_angle) * motion_spike * 0.105 * body_scale
                 + math.sin(pitch_direction) * pitch_drive * 0.082 * body.character.detail
                 + math.sin(angle + math.pi * 0.5)
                 * tempo_wave
@@ -1143,16 +1271,31 @@ class AcousticOrganism:
                 + center_pull_y
                 + home_y
                 + separation_y[index]
+                + adhesion_y[index]
                 + (mean_vy - body.vy) * 0.042
                 + group_pull_y
+                + thermal_centroid_y
                 + wave_y * motion.audio_push * 0.135 * body_scale
                 + outward_y * emotional_release
+                + role_pull_y
+                + role_open_y
+                + speech_pull_y
                 - affect.yearning
                 * max(body.character.voice, body.character.detail * 0.62)
                 * 0.010
             ) * dt
 
-            drag = 0.28 + (1.0 - viscosity) * 3.2 + (1.0 - motion.inertia) * 2.0
+            thermal_drag = (
+                max(0.0, body.thermal_viscosity - 0.62) * 1.15
+                if embody_posture
+                else 0.0
+            )
+            drag = (
+                0.28
+                + (1.0 - viscosity) * 3.2
+                + (1.0 - motion.inertia) * 2.0
+                + thermal_drag
+            )
             damping = math.exp(-drag * dt)
             body.vx *= damping
             body.vy *= damping
@@ -1172,15 +1315,81 @@ class AcousticOrganism:
             body.x += body.vx * dt
             body.y += body.vy * dt
 
+            # A shallow third axis gives the terminal projection parallax
+            # without making the established 2D habitat unstable.  Voice and
+            # tempo sustain an orbit; bass and confirmed gestures give it a
+            # brief outward push.  Individual phase keeps the cast from
+            # moving through depth as one rigid sheet.
+            depth_phase = self.phase * (0.38 + forces.tempo * 0.38) + body.phase * 1.61
+            depth_target = 0.50 + role_depth + math.sin(depth_phase) * (
+                0.16 + forces.voice * 0.06 + forces.energy * 0.035
+            )
+            depth_push = (
+                forces.bass * body.character.bass * 0.052
+                + motion_event * 0.070
+                + motion_spike * 0.038
+                + affect.release * 0.028
+                + affect.catharsis * 0.040
+            ) * math.sin(body.phase * 1.17 + self.phase * 0.72)
+            body.vz += ((depth_target - body.z) * 0.72 + depth_push) * dt
+            body.vz *= math.exp(-(1.35 + (1.0 - viscosity) * 1.8) * dt)
+            body.vz = clamp(body.vz, -0.14, 0.14)
+            body.z += body.vz * dt
+            if body.z < 0.08:
+                body.z = 0.08
+                body.vz = abs(body.vz) * 0.32
+            elif body.z > 0.92:
+                body.z = 0.92
+                body.vz = -abs(body.vz) * 0.32
+
+            # Orientation is persistent state, not a screen-space texture.
+            # Each actor carries separate angular momentum: a hit tumbles the
+            # actor that heard it, then it visibly coasts rather than all cast
+            # members mechanically advancing at the same rate.
+            turn_gain = behavior.tempo_gain if behavior is not None else 1.0
+            flip_gain = behavior.transient_gain if behavior is not None else 1.0
+            impact = max(0.0, motion_event - previous_afterglow * fluid_motion_gain)
+            turn = body.character.turn
+            body.angular_yaw += dt * (
+                0.18 * turn
+                + forces.tempo * 1.85 * turn_gain * turn
+                + forces.bass * body.character.bass * 0.52
+                + forces.voice * body.character.voice * 0.30
+                + role_yaw
+            ) + impact * 2.35 * flip_gain * turn
+            body.angular_pitch += dt * (
+                0.10 * turn
+                + forces.bass * body.character.bass * 0.88 * turn_gain
+                + motion_spike * 0.72 * flip_gain
+                + role_pitch
+            ) + impact * 1.25 * flip_gain
+            body.angular_roll += dt * (
+                0.07 * turn
+                + forces.tempo * 0.38 * turn_gain
+                + forces.detail * body.character.detail * 0.84 * turn_gain
+                + role_roll
+            ) + impact * 1.55 * flip_gain * turn
+            angular_damping = math.exp(
+                -(1.45 + (1.0 - forces.energy) * 0.50 + posture.stillness * 0.35) * dt
+            )
+            body.angular_yaw = max(-4.2, min(4.2, body.angular_yaw * angular_damping))
+            body.angular_pitch = max(-3.6, min(3.6, body.angular_pitch * angular_damping))
+            body.angular_roll = max(-3.8, min(3.8, body.angular_roll * angular_damping))
+            body.yaw += body.angular_yaw * dt
+            body.pitch += body.angular_pitch * dt
+            body.roll += body.angular_roll * dt
+
             radius_band = radius_min + (radius_max - radius_min) * body.character.size
             target_radius = radius_band * self.composition.radius_scale
             target_radius *= (
                 1.0
-                + forces.bass * (0.10 - forces.tone * 0.030)
-                + pitch_drive * 0.050
+                + forces.bass * (0.25 - forces.tone * 0.070)
+                + pitch_drive * 0.095
                 + tempo_wave
                 * tempo_drive
-                * (0.016 + body.character.deformation * 0.010)
+                * (0.045 + body.character.deformation * 0.025)
+                + motion_event * 0.115
+                + motion_spike * 0.070
                 - affect.tension * 0.025
                 + affect.release * 0.055
                 + affect.catharsis * 0.075
@@ -1188,6 +1397,19 @@ class AcousticOrganism:
                 + story.interruption * 0.030
                 + story.resolution * 0.025
             )
+            if embody_posture:
+                # Heat makes wax yield gradually. Keep attacks as brief
+                # pressure events rather than letting them inflate the whole
+                # body like a beat-driven balloon.
+                target_radius *= (
+                    1.0
+                    + (body.thermal_heat - 0.32) * 0.10
+                    - event * 0.070
+                    - body.spike * 0.040
+                    + body.bridge_strength * 0.045
+                )
+            elif speaking:
+                target_radius *= 1.0 + body.speech_flow * 0.055 + body.speech_pulse * 0.022
             body.base_radius = lerp(body.base_radius, target_radius, dt * 1.6)
             body.radius = lerp(body.radius, body.base_radius, dt * 3.4)
 
@@ -1225,8 +1447,41 @@ class AcousticOrganism:
                 body.wall_pressure_y * math.exp(-4.0 * dt), wall_pressure_y
             )
             body.wall_pressure = max(body.wall_pressure_x, body.wall_pressure_y)
-            velocity_angle = math.atan2(body.vy, body.vx)
-            speed_stretch = clamp(math.hypot(body.vx, body.vy) / max(0.03, speed_limit))
+            if embody_posture:
+                # Shape follows a low-pass motion and pressure history. This
+                # gives the wax a delayed bulge and long recovery instead of
+                # changing silhouette on every raw capture frame.
+                body.flow_memory_x = lerp(body.flow_memory_x, body.vx, dt * 1.15)
+                body.flow_memory_y = lerp(body.flow_memory_y, body.vy, dt * 1.15)
+                held_thermal_pressure = clamp(
+                    story.held_pressure
+                    * (
+                        0.10
+                        + local_band * 0.12
+                        + body.character.bass * 0.025
+                    )
+                    + body.adhesion * 0.06
+                )
+                body.pressure_memory = lerp(
+                    body.pressure_memory,
+                    max(body.acoustic_pressure, held_thermal_pressure),
+                    dt * 0.72,
+                )
+                shape_vx = body.flow_memory_x
+                shape_vy = body.flow_memory_y
+                shape_pressure = body.pressure_memory
+                shape_event = event * 0.32
+                shape_spike = body.spike * 0.38
+            else:
+                shape_vx = body.vx
+                shape_vy = body.vy
+                shape_pressure = body.acoustic_pressure
+                shape_event = motion_event
+                shape_spike = motion_spike
+            velocity_angle = math.atan2(shape_vy, shape_vx)
+            speed_stretch = clamp(
+                math.hypot(shape_vx, shape_vy) / max(0.03, speed_limit)
+            )
             travel_x = math.cos(velocity_angle) ** 2
             travel_y = math.sin(velocity_angle) ** 2
             body.stretch_x = 1.0 + travel_x * speed_stretch * 0.20 - travel_y * speed_stretch * 0.07
@@ -1234,7 +1489,7 @@ class AcousticOrganism:
             tonal_shape = (
                 forces.detail * body.character.detail * (0.035 + forces.tone * 0.105)
                 + forces.flux * 0.11
-                + event * 0.10
+                + shape_event * 0.10
                 + affect.fragility * body.character.detail * 0.025
             ) * body.character.deformation
             body.stretch_x += tonal_shape * (0.55 + 0.45 * abs(math.cos(pitch_direction)))
@@ -1252,14 +1507,26 @@ class AcousticOrganism:
             )
             body.stretch_x -= yearning_shape * 0.28
             body.stretch_y += yearning_shape
-            body.stretch_x += abs(math.cos(body.impact_angle)) * body.spike * 0.08
-            body.stretch_y += abs(math.sin(body.impact_angle)) * body.spike * 0.08
-            pressure_x = math.cos(body.pressure_angle) ** 2 * body.acoustic_pressure
-            pressure_y = math.sin(body.pressure_angle) ** 2 * body.acoustic_pressure
+            body.stretch_x += abs(math.cos(body.impact_angle)) * shape_spike * 0.08
+            body.stretch_y += abs(math.sin(body.impact_angle)) * shape_spike * 0.08
+            pressure_x = math.cos(body.pressure_angle) ** 2 * shape_pressure
+            pressure_y = math.sin(body.pressure_angle) ** 2 * shape_pressure
             body.stretch_x += pressure_y * 0.13 - pressure_x * 0.08
             body.stretch_y += pressure_x * 0.13 - pressure_y * 0.08
             body.stretch_x += body.wall_pressure_y * 0.24 - body.wall_pressure_x * 0.17
             body.stretch_y += body.wall_pressure_x * 0.24 - body.wall_pressure_y * 0.17
+            if embody_posture:
+                # A bridge broadens at its contact point while buoyant wax
+                # grows a little taller. The existing hit deformation is
+                # softened, never replaced with a new surface.
+                body.stretch_x += body.bridge_strength * 0.12 - body.spike * 0.040
+                body.stretch_y += body.thermal_heat * 0.055 - body.spike * 0.040
+            elif speaking:
+                # Voice is a small expanding/settling breath; detail is a
+                # local consonant flick, not a body-wide hit response.
+                body.stretch_x += body.speech_flow * 0.065 + body.speech_pulse * 0.026
+                body.stretch_y += body.speech_flow * 0.040 - body.speech_pulse * 0.012
+                body.afterglow = max(body.afterglow, body.speech_pulse * 0.24)
             body.stretch_x = max(0.72, body.stretch_x)
             body.stretch_y = max(0.72, body.stretch_y)
 
@@ -1336,6 +1603,8 @@ class OrganismFieldRenderer:
         surface_rows = [[0.0] * width for _ in range(height)]
         attention_rows = [[0.0] * width for _ in range(height)]
         axis_x, axis_y = tile_axis_scales(width, height, cell_aspect)
+        camera_x = math.sin(phase * 0.19) * 0.018
+        camera_y = math.cos(phase * 0.15) * 0.012
 
         for y in range(height):
             ny = y / max(1, height - 1)
@@ -1348,14 +1617,21 @@ class OrganismFieldRenderer:
                     if body.presence < 0.01:
                         continue
                     radius = max(0.035, body.radius)
-                    radius_x = radius * axis_x
-                    radius_y = radius * axis_y
+                    depth_scale = 0.78 + clamp(body.z) * 0.36
+                    depth_luminance = 0.70 + clamp(body.z) * 0.30
+                    parallax = 0.5 - clamp(body.z)
+                    projected_x = clamp(body.x + camera_x * parallax)
+                    projected_y = clamp(body.y + camera_y * parallax)
+                    radius_x = radius * axis_x * depth_scale
+                    radius_y = radius * axis_y * depth_scale
                     band_position = body.band / max(1, len(forces.bands) - 1)
                     pitch_affinity = max(0.16, 1.0 - abs(band_position - forces.tone) * 1.7)
-                    dx = (nx - body.x) / (radius_x * body.stretch_x)
-                    dy = (ny - body.y) / (radius_y * body.stretch_y)
+                    dx = (nx - projected_x) / (radius_x * body.stretch_x)
+                    dy = (ny - projected_y) / (radius_y * body.stretch_y)
                     dist2 = dx * dx + dy * dy
-                    influence = body.presence / ((1.0 + dist2) ** 2.65)
+                    influence = (
+                        body.presence * depth_luminance / ((1.0 + dist2) ** 2.65)
+                    )
                     # A soft union lets touching bodies merge at their skirts
                     # without turning several bodies into one saturated slab.
                     mass = max(mass, influence) + min(mass, influence) * 0.22
@@ -1382,8 +1658,8 @@ class OrganismFieldRenderer:
                     local_detail += influence * ripple * forces.pulse * (0.35 + pitch_affinity * 0.65)
 
                     hit = forces.hits[body.band % len(forces.hits)] if forces.hits else 0.0
-                    impact_x = body.x + math.cos(body.impact_angle) * radius_x * 0.72
-                    impact_y = body.y + math.sin(body.impact_angle) * radius_y * 0.72
+                    impact_x = projected_x + math.cos(body.impact_angle) * radius_x * 0.72
+                    impact_y = projected_y + math.sin(body.impact_angle) * radius_y * 0.72
                     impact_dx = (nx - impact_x) / max(0.012, radius_x * 0.42)
                     impact_dy = (ny - impact_y) / max(0.012, radius_y * 0.42)
                     local_attention += (
@@ -1450,20 +1726,3 @@ def _connected_regions(buffer: list[list[float]], cutoff: float) -> int:
                     stack.append((nx, ny))
             sizes.append(size)
     return sum(size >= 3 for size in sizes)
-
-
-def _eight_bands(values, fallback: float) -> list[float]:
-    source = [clamp(float(value)) for value in (values or [])]
-    if not source:
-        return [clamp(fallback)] * 8
-    if len(source) == 8:
-        return source
-    if len(source) == 1:
-        return source * 8
-    result = []
-    for index in range(8):
-        position = index * (len(source) - 1) / 7.0
-        left = int(position)
-        right = min(len(source) - 1, left + 1)
-        result.append(lerp(source[left], source[right], position - left))
-    return result

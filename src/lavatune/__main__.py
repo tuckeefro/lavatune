@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from . import __version__
 from .app import LavaTuneApp
@@ -10,12 +11,14 @@ from .config import (
     CONTENT_MODES,
     DEFAULT_THEME_NAMES,
     PROFILE_NAMES,
+    RENDERER_NAMES,
     apply_cli_overrides,
     load_config,
     preference_path,
 )
 from .doctor import format_report, inspect_environment
 from .text import sanitize_display_text
+from .trace import DEFAULT_TRACE_PATH, TRACE_MAX_SECONDS, TRACE_MIN_SECONDS, capture_trace
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -100,6 +103,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run without live audio using a synthetic signal.",
     )
     parser.add_argument(
+        "--renderer",
+        choices=RENDERER_NAMES,
+        help="Presentation renderer: terminal-native tui (default) or experimental canvas.",
+    )
+    parser.add_argument(
+        "--canvas",
+        action="store_true",
+        help="Compatibility alias for --renderer canvas.",
+    )
+    parser.add_argument(
         "--doctor",
         action="store_true",
         help="Check the local environment and audio path, then exit.",
@@ -108,6 +121,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-audio-probe",
         action="store_true",
         help="With --doctor, skip the short live PCM probe.",
+    )
+    parser.add_argument(
+        "--trace-once",
+        type=float,
+        metavar="SECONDS",
+        help=(
+            "Capture local feature values for one bounded pass, then exit "
+            f"({TRACE_MIN_SECONDS:g}-{TRACE_MAX_SECONDS:g} seconds; no audio is recorded)."
+        ),
+    )
+    parser.add_argument(
+        "--trace-output",
+        help=f"Feature-trace path (default: {DEFAULT_TRACE_PATH}).",
     )
     return parser
 
@@ -118,6 +144,15 @@ def main() -> int:
 
     if args.no_audio_probe and not args.doctor:
         parser.error("--no-audio-probe requires --doctor")
+    if args.trace_output and args.trace_once is None:
+        parser.error("--trace-output requires --trace-once")
+    if args.trace_once is not None and args.demo:
+        parser.error("--trace-once captures live audio and cannot be used with --demo")
+    if args.canvas and args.renderer and args.renderer != "canvas":
+        parser.error("--canvas cannot be combined with --renderer tui")
+    renderer_name = "canvas" if args.canvas else args.renderer
+    if args.trace_once is not None and renderer_name == "canvas":
+        parser.error("--trace-once cannot be used with the canvas renderer")
 
     if args.list_themes:
         for theme in DEFAULT_THEME_NAMES:
@@ -152,6 +187,7 @@ def main() -> int:
         config = apply_cli_overrides(
             config,
             backend_name=args.backend,
+            renderer_name=renderer_name,
             source=args.source,
             show_stats=args.show_stats,
             hide_stats=args.no_stats,
@@ -167,6 +203,31 @@ def main() -> int:
         report = inspect_environment(config, probe_audio=not args.no_audio_probe)
         print(format_report(report))
         return report.exit_code
+
+    if args.trace_once is not None:
+        try:
+            result = capture_trace(
+                config,
+                args.trace_once,
+                DEFAULT_TRACE_PATH if args.trace_output is None else Path(args.trace_output),
+            )
+        except RuntimeError as exc:
+            print(sanitize_display_text(str(exc), max_chars=500), file=sys.stderr)
+            return 1
+        print(
+            f"Trace complete: {result.samples} feature samples from "
+            f"{result.frames} analysis frames at {result.path}"
+        )
+        return 0
+
+    if config.render.renderer == "canvas":
+        try:
+            from .canvas import run_canvas
+
+            return run_canvas(config, args.demo)
+        except RuntimeError as exc:
+            print(sanitize_display_text(str(exc), max_chars=500), file=sys.stderr)
+            return 1
 
     app = LavaTuneApp(
         config,

@@ -171,9 +171,14 @@ class AudioCapture:
     def _resolve_source(self, configured: str | None) -> str | None:
         if configured:
             return configured
+        microphone = self.config.capture_route == "microphone"
         if self.backend == "pipewire":
-            return "@DEFAULT_AUDIO_SINK@.monitor"
-        if self.backend in {"pulse", "ffmpeg"}:
+            return "@DEFAULT_AUDIO_SOURCE@" if microphone else "@DEFAULT_AUDIO_SINK@.monitor"
+        if self.backend == "pulse":
+            return "@DEFAULT_SOURCE@" if microphone else "@DEFAULT_MONITOR@"
+        if self.backend == "ffmpeg":
+            if microphone:
+                return "default"
             return "@DEFAULT_MONITOR@"
         return None
 

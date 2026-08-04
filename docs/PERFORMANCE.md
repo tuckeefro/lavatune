@@ -37,12 +37,25 @@ Measured on the same machine at 120 by 30 terminal cells over 120 synthetic fram
 
 | Render path | Milliseconds/frame |
 | --- | ---: |
-| Alpha scalar field + Fluid | 37.852 |
-| Analytic contour Fluid with surface gestures | 3.524 |
-| Unchanged cached contour | 0.008 |
-| Prepared-row Text | 16.390 |
+| Alpha scalar field + Fluid | 43.089 |
+| Analytic contour Fluid with surface-wave memory | 7.6–10.5 |
+| Unchanged cached contour | 0.011 |
+| Prepared-row Text | 21.550 |
 
-The contour Fluid path is 10.74 times faster per rendered frame than the alpha path in this benchmark. It prepares body geometry once and emits occupied row spans rather than a full matrix. Five percent of this deliberately changing synthetic sequence reused the one-entry quantized contour cache; calmer real sequences can reuse more. The cached figure isolates a repeated material call and does not include body simulation.
+Recent 120-frame runs place the contour Fluid path between 5.68 and 7.29 times faster per rendered frame than the alpha path on this development host. It prepares body geometry once and emits occupied row spans rather than a full matrix. The surface refinement adds four persistent scalars per body and evaluates a localized wave only at already-occupied contour edges; it adds no full-screen pass, new simulation grid, or higher display cadence. Less than one percent of this deliberately changing synthetic sequence reused the one-entry quantized contour cache; calmer real sequences can reuse more. The cached figure isolates a repeated material call and does not include body simulation.
+
+### Experimental Volume refinement checkpoint
+
+The concentrated thermal-wax refinement was measured separately on 2026-08-03 with the same Python 3.13.5 x86-64 host, 120 by 30 terminal cells, 120 synthetic frames, and the command above. A single measurement immediately before the refinement captured the current Volume baseline; four isolated measurements after it provide a range so one scheduler fluctuation is not presented as precision:
+
+| Volume checkpoint | Milliseconds/frame |
+| --- | ---: |
+| Current pre-refinement baseline | 29.879 |
+| Refined Volume, median of four runs | 32.396 |
+| Refined Volume range | 31.098–33.199 |
+| Median change from baseline | +2.517 (+8.4%) |
+
+The paired refined runs placed Volume between 3.64 and 5.09 times the analytic contour Fluid cost. Most of that cost remains the existing sparse four-quadrant, depth-tested projection of four bodies. The refinement adds six fixed pair-distance and bridge scores, per-body thermal/history scalars, and one four-body visual-leader selection; it does not add a field pass, increase subcell samples, expand projected bounds, or raise render/physics cadence. Those bounded additions explain the observed increase, with normal host scheduling noise visible in the range. Volume therefore remains experimental and configuration-only; this checkpoint does not justify changing the default Fluid renderer or the fixed CPU envelope.
 
 Lavatune draws at an activity-dependent 2/4/8/14 FPS and advances physics independently at 2/4/6/8 FPS. The `power-save` profile caps active display cadence at 6 FPS. Audio arrival and keyboard input wake the main loop through `select`, replacing the former 100 Hz polling wakeup. Every retained audio frame is mapped, but attacks are latched until a draw and slower affective state uses constant-work rolling values rather than stored history or inference.
 

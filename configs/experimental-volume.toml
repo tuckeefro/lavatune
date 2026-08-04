@@ -1,0 +1,20 @@
+# Experimental CPU-heavy terminal volume renderer. The daily default remains
+# Fluid until this path meets its relative render-cost gate.
+listening_context = "music"
+profile = "responsive"
+
+[render]
+material = "volume"
+palette = "oxide"
+color_steps = 4
+edge = "defined"
+
+[lava]
+# Concentrated thermal-wax tuning: held low pressure warms and lifts bodies;
+# one close warm pair may make a soft bridge. Fast hits stay local.
+blobs = 4
+reactivity = 2.2
+drift = 0.46
+viscosity = 0.86
+radius_min = 0.11
+radius_max = 0.25

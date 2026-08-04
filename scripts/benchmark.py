@@ -10,7 +10,7 @@ import platform
 import resource
 import time
 
-from lavatune.app import LavaField
+from lavatune.runtime import LavaField
 from lavatune.audio import AudioFrame
 from lavatune.config import LavaConfig
 

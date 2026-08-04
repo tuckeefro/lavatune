@@ -26,13 +26,18 @@ from lavatune.organism import (
     AffectiveTracker,
     AudioForceMapper,
     AudioForces,
+    apply_behavior_profile,
+    behavior_for_context,
     NarrativeState,
     NarrativeTracker,
+    SharedPosture,
     adaptive_centroid_axis,
     circulation_at,
     compose_tile,
     habitat_anchor,
     measure_field,
+    shared_posture,
+    thermal_habitat_anchor,
     tile_axis_scales,
 )
 
@@ -52,6 +57,104 @@ def settle(field: LavaField, frame: AudioFrame, mode: str, frames: int = 90) -> 
 
 
 class AudioForceTests(unittest.TestCase):
+    def test_shared_posture_keeps_the_acoustic_relationships_bounded(self) -> None:
+        neutral = shared_posture(AffectiveState(), NarrativeState())
+        tense = shared_posture(
+            AffectiveState(tension=0.88, restraint=0.82, weight=0.66),
+            NarrativeState(expectation=0.54),
+        )
+        released = shared_posture(
+            AffectiveState(release=0.84, catharsis=0.80, openness=0.64),
+            NarrativeState(resolution=0.58),
+        )
+        fractured = shared_posture(
+            AffectiveState(snap=0.86, volatility=0.78),
+            NarrativeState(interruption=0.90),
+        )
+        steady = shared_posture(
+            AffectiveState(cohesion=0.90, intimacy=0.72), NarrativeState()
+        )
+
+        for posture in (neutral, tense, released, fractured, steady):
+            self.assertIsInstance(posture, SharedPosture)
+            self.assertTrue(
+                all(
+                    0.0 <= value <= 1.0
+                    for value in (
+                        posture.contraction,
+                        posture.fracture,
+                        posture.openness,
+                        posture.stillness,
+                        posture.synchrony,
+                    )
+                )
+            )
+        self.assertGreater(tense.contraction, neutral.contraction)
+        self.assertGreater(released.openness, tense.openness)
+        self.assertGreater(fractured.fracture, neutral.fracture)
+        self.assertGreater(steady.synchrony, fractured.synchrony)
+        phrase = shared_posture(
+            AffectiveState(),
+            NarrativeState(cadence=0.82, held_pressure=0.76, rupture=0.84, aftermath=0.70),
+        )
+        self.assertGreater(phrase.contraction, neutral.contraction)
+        self.assertGreater(phrase.fracture, neutral.fracture)
+        self.assertGreater(phrase.stillness, neutral.stillness)
+        overdriven = shared_posture(
+            AffectiveState(), NarrativeState(overdrive=0.90)
+        )
+        self.assertGreater(overdriven.fracture, neutral.fracture)
+        self.assertLess(overdriven.synchrony, neutral.synchrony)
+
+    def test_listening_contexts_map_the_same_forces_to_distinct_behavior(self) -> None:
+        raw = AudioForces(
+            bass=0.80,
+            voice=0.70,
+            detail=0.65,
+            transient=0.90,
+            tempo=0.75,
+            pulse=0.85,
+            flux=0.60,
+            rhythm_density=0.70,
+            rhythm_impulse=0.80,
+            bands=(0.60,) * 8,
+            hits=(0.80,) * 8,
+            deviations=(0.70,) * 8,
+        )
+        mapped = {
+            name: apply_behavior_profile(raw, behavior_for_context(name))
+            for name in ("podcast", "radio", "music", "microphone")
+        }
+
+        self.assertEqual(behavior_for_context("podcast").active_bodies, 2)
+        self.assertEqual(behavior_for_context("radio").active_bodies, 3)
+        self.assertEqual(behavior_for_context("music").active_bodies, 4)
+        self.assertEqual(behavior_for_context("microphone").active_bodies, 1)
+        self.assertGreater(mapped["music"].transient, mapped["radio"].transient)
+        self.assertGreater(mapped["radio"].transient, mapped["podcast"].transient)
+        self.assertGreater(mapped["podcast"].voice, mapped["music"].voice * 0.95)
+        self.assertLess(mapped["microphone"].bass, mapped["podcast"].bass)
+
+    def test_organisms_keep_independent_rotational_momentum(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        forces = AudioForces(
+            bass=0.76, voice=0.64, detail=0.70, transient=0.88, tempo=0.68,
+            pulse=0.72, rhythm_impulse=0.80, bands=(0.65,) * 8, hits=(0.84,) * 8,
+        )
+        for _ in range(24):
+            organism.update(1.0 / 22.0, forces, 60, 20, LavaConfig(blobs=4))
+
+        momentum = [
+            round(abs(body.angular_yaw) + abs(body.angular_pitch) + abs(body.angular_roll), 3)
+            for body in organism.bodies[:4]
+        ]
+        poses = [
+            (round(body.yaw, 2), round(body.pitch, 2), round(body.roll, 2))
+            for body in organism.bodies[:4]
+        ]
+        self.assertEqual(len(set(momentum)), 4)
+        self.assertEqual(len(set(poses)), 4)
+
     def test_time_based_mapping_is_consistent_across_capture_cadences(self) -> None:
         def map_for(step: float) -> AudioForces:
             mapper = AudioForceMapper()
@@ -484,6 +587,27 @@ class AudioForceTests(unittest.TestCase):
         self.assertLess(settled.rhythm_density, 0.08)
         self.assertEqual(settled.rhythm_impulse, 0.0)
 
+    def test_bright_attack_keeps_rhythm_without_becoming_a_full_body_impact(self) -> None:
+        def map_hit(bands: list[float]) -> AudioForces:
+            mapper = AudioForceMapper()
+            for index in range(20):
+                mapper.map(
+                    AudioFrame(0.18, [0.18] * 8, 0.0, 0.08, 1.0 + index * 0.10),
+                    "music",
+                    1.0,
+                )
+            return mapper.map(
+                AudioFrame(0.62, bands, 0.95, 0.28, 3.2), "music", 1.0
+            )
+
+        bright = map_hit([0.12, 0.14, 0.16, 0.18, 0.22, 0.82, 0.90, 0.96])
+        kick = map_hit([0.96, 0.90, 0.82, 0.28, 0.20, 0.14, 0.10, 0.08])
+
+        self.assertGreater(bright.detail, bright.bass)
+        self.assertGreater(bright.rhythm_impulse, 0.50)
+        self.assertGreater(kick.transient, bright.transient * 4.0)
+        self.assertGreater(kick.pulse, bright.pulse * 4.0)
+
     def test_steady_compressed_audio_does_not_fake_rapid_density(self) -> None:
         mapper = AudioForceMapper()
         bands = [0.62] * 8
@@ -500,6 +624,81 @@ class AudioForceTests(unittest.TestCase):
 
 
 class NarrativeTests(unittest.TestCase):
+    def test_phrase_memory_turns_held_cadence_into_rupture_then_aftermath(self) -> None:
+        tracker = NarrativeTracker()
+        tense = AffectiveState(tension=0.75, cohesion=0.80, volatility=0.05)
+        steady = AudioForces(
+            rhythm_impulse=0.55,
+            tempo=0.70,
+            energy=0.65,
+            level=0.65,
+            tone=0.18,
+            transient=0.08,
+            bands=(0.50,) * 8,
+        )
+        timestamp = 1.0
+        for _ in range(16):
+            held = tracker.update(steady, tense, timestamp)
+            timestamp += 0.40
+
+        breaker = AudioForces(
+            rhythm_impulse=0.70,
+            tempo=0.45,
+            energy=0.70,
+            level=0.70,
+            tone=0.50,
+            transient=0.50,
+            deviations=(0.85,) * 8,
+            bands=(0.70,) * 8,
+        )
+        ruptured = tracker.update(
+            breaker,
+            AffectiveState(tension=0.75, snap=0.40, cohesion=0.80, volatility=0.50),
+            timestamp + 0.75,
+        )
+        quiet = AudioForces(level=0.02, energy=0.02)
+        for _ in range(4):
+            timestamp += 0.20
+            aftermath = tracker.update(quiet, AffectiveState(weight=0.65), timestamp + 0.75)
+
+        fresh = NarrativeTracker().update(
+            breaker,
+            AffectiveState(tension=0.75, snap=0.40, cohesion=0.80, volatility=0.50),
+            1.0,
+        )
+        silent = NarrativeTracker()
+        for index in range(12):
+            empty = silent.update(quiet, AffectiveState(), 1.0 + index * 0.20)
+
+        self.assertGreater(held.cadence, 0.80)
+        self.assertGreater(held.held_pressure, 0.80)
+        self.assertGreater(ruptured.rupture, fresh.rupture + 0.35)
+        self.assertGreater(aftermath.aftermath, 0.45)
+        self.assertLess(empty.held_pressure, 0.01)
+        self.assertLess(empty.rupture, 0.01)
+        self.assertLess(empty.aftermath, 0.01)
+
+    def test_dense_peak_enters_overdrive_without_a_cadence_break(self) -> None:
+        tracker = NarrativeTracker()
+        dense_peak = AudioForces(
+            energy=0.92,
+            level=0.82,
+            detail=0.84,
+            tempo=0.72,
+            transient=0.64,
+            pulse=0.78,
+            rhythm_density=0.86,
+            rhythm_impulse=0.74,
+        )
+        quiet = AudioForces(energy=0.18, level=0.18, detail=0.12)
+        for index in range(12):
+            peak = tracker.update(dense_peak, AffectiveState(agitation=0.70), 1.0 + index * 0.10)
+        for index in range(20):
+            settled = tracker.update(quiet, AffectiveState(), 2.3 + index * 0.10)
+
+        self.assertGreater(peak.overdrive, 0.55)
+        self.assertLess(settled.overdrive, peak.overdrive * 0.15)
+
     def test_predictable_motion_builds_expectation(self) -> None:
         tracker = NarrativeTracker()
         predictable = AudioForces(tempo=0.68, energy=0.46, flux=0.03)
@@ -575,6 +774,163 @@ class NarrativeTests(unittest.TestCase):
 
 
 class CompositionTests(unittest.TestCase):
+    def test_volume_scars_persist_until_a_new_stable_pattern_earns_recovery(self) -> None:
+        config = LavaConfig(blobs=4)
+        organism = AcousticOrganism(body_limit=4)
+        organism.seed_for_tile(44, 18, 4)
+        rupture = NarrativeState(rupture=0.90, held_pressure=0.80)
+        organism.update(
+            1.0 / 22.0,
+            AudioForces(),
+            44,
+            18,
+            config,
+            "buoyant",
+            CELL_ASPECT,
+            AffectiveState(volatility=0.60),
+            rupture,
+            embody_posture=True,
+        )
+        marked = [body.scar for body in organism.bodies[:4]]
+        for _ in range(80):
+            organism.update(
+                1.0 / 22.0,
+                AudioForces(),
+                44,
+                18,
+                config,
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(volatility=0.60),
+                NarrativeState(overdrive=0.40),
+                embody_posture=True,
+            )
+        held = [body.scar for body in organism.bodies[:4]]
+        for _ in range(130):
+            organism.update(
+                1.0 / 22.0,
+                AudioForces(energy=0.20, level=0.20),
+                44,
+                18,
+                config,
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(openness=0.50, volatility=0.10),
+                NarrativeState(cadence=0.90, resolution=0.40),
+                embody_posture=True,
+            )
+        recovered = [body.scar for body in organism.bodies[:4]]
+
+        self.assertGreater(organism.scar_state.shared, 0.0)
+        self.assertEqual(held, marked)
+        self.assertGreater(marked[2], marked[0])  # glint fractures first
+        self.assertGreater(len({round(value, 3) for value in marked}), 3)
+        self.assertTrue(all(after < before * 0.80 for before, after in zip(held, recovered)))
+
+    def test_volume_scars_require_a_credible_rupture_not_any_interruption(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        organism.update(
+            1.0 / 22.0,
+            AudioForces(energy=0.45, level=0.45),
+            44,
+            18,
+            LavaConfig(blobs=4),
+            "buoyant",
+            CELL_ASPECT,
+            AffectiveState(volatility=0.70),
+            NarrativeState(interruption=0.95, held_pressure=0.80),
+            embody_posture=True,
+        )
+
+        self.assertEqual(organism.scar_state.shared, 0.0)
+        self.assertEqual([body.scar for body in organism.bodies[:4]], [0.0] * 4)
+
+    def test_fluid_path_does_not_create_volume_scars(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        organism.update(
+            1.0 / 22.0,
+            AudioForces(),
+            44,
+            18,
+            LavaConfig(blobs=4),
+            "buoyant",
+            CELL_ASPECT,
+            AffectiveState(volatility=0.70),
+            NarrativeState(rupture=0.90, held_pressure=0.80),
+        )
+
+        self.assertEqual(organism.scar_state.shared, 0.0)
+        self.assertEqual([body.scar for body in organism.bodies[:4]], [0.0] * 4)
+
+    def test_volume_posture_embodies_group_space_and_independent_roles(self) -> None:
+        config = LavaConfig(blobs=4)
+
+        def run(affect: AffectiveState, story: NarrativeState = NarrativeState()):
+            organism = AcousticOrganism(body_limit=4)
+            organism.seed_for_tile(44, 18, 4)
+            for _ in range(80):
+                organism.update(
+                    1.0 / 22.0,
+                    AudioForces(energy=0.25),
+                    44,
+                    18,
+                    config,
+                    "buoyant",
+                    CELL_ASPECT,
+                    affect,
+                    story,
+                    embody_posture=True,
+                )
+            center_x, center_y = organism.center_of_mass(4)
+            spread = sum(
+                math.hypot(body.x - center_x, body.y - center_y)
+                for body in organism.bodies[:4]
+            ) / 4.0
+            radial = [math.hypot(body.x - center_x, body.y - center_y) for body in organism.bodies[:4]]
+            angular = [
+                abs(body.angular_yaw) + abs(body.angular_pitch) + abs(body.angular_roll)
+                for body in organism.bodies[:4]
+            ]
+            return organism, spread, radial, angular
+
+        neutral, neutral_spread, neutral_radial, _ = run(AffectiveState())
+        tense, tense_spread, _, _ = run(
+            AffectiveState(tension=0.85, restraint=0.80, weight=0.70),
+            NarrativeState(expectation=0.50),
+        )
+        released, release_spread, release_radial, _ = run(
+            AffectiveState(release=0.85, catharsis=0.82, openness=0.65),
+            NarrativeState(resolution=0.60),
+        )
+        fractured, _, _, fracture_angular = run(
+            AffectiveState(snap=0.90, volatility=0.80),
+            NarrativeState(interruption=0.90),
+        )
+
+        # Shared weather changes the social space.
+        self.assertLess(tense_spread, neutral_spread * 0.82)
+        self.assertGreater(release_spread, tense_spread * 1.80)
+        # The roles do not become aliases of one another.
+        self.assertLess(tense.bodies[0].z, neutral.bodies[0].z)
+        self.assertGreater(release_radial[3], neutral_radial[3] * 1.45)
+        self.assertGreater(fracture_angular[2], fracture_angular[0] * 1.6)
+        self.assertGreater(len({round(value, 3) for value in fracture_angular}), 3)
+        self.assertTrue(all(0.08 <= body.z <= 0.92 for body in fractured.bodies[:4]))
+
+    def test_bodies_keep_bounded_independent_depth_motion(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        starts = [body.z for body in organism.bodies]
+        forces = AudioForces(bass=0.74, voice=0.62, energy=0.70, tempo=0.66)
+        for _ in range(80):
+            organism.update(
+                1.0 / 22.0, forces, 44, 18, LavaConfig(blobs=4), "buoyant"
+            )
+
+        depths = [body.z for body in organism.bodies]
+        self.assertTrue(all(0.08 <= depth <= 0.92 for depth in depths))
+        self.assertTrue(any(abs(depth - start) > 0.015 for depth, start in zip(depths, starts)))
+        self.assertGreater(len({round(depth, 3) for depth in depths}), 1)
+
     def test_embodied_mirror_contracts_under_tension_and_opens_on_release(self) -> None:
         config = LavaConfig(blobs=4)
 
@@ -1196,19 +1552,41 @@ class RenderingBudgetTests(unittest.TestCase):
                     for material_name in MATERIAL_NAMES:
                         material = material_for(material_name)
                         style = MaterialStyle()
-                        cells = [
-                            material.cell(
-                                field.field_frame,
-                                x,
-                                y,
+                        if material_name == "volume":
+                            rows = material.render(
+                                field.bodies,
+                                field.forces,
                                 width,
                                 height,
                                 style,
                                 field.phase,
+                                CELL_ASPECT,
                             )
-                            for y in range(height)
-                            for x in range(width)
-                        ]
+                            cells = [cell for row in rows for cell in row]
+                        elif material_name == "wax":
+                            rows = material.render(
+                                field.wax,
+                                width,
+                                height,
+                                style,
+                                field.phase,
+                                CELL_ASPECT,
+                            )
+                            cells = [cell for row in rows for cell in row]
+                        else:
+                            cells = [
+                                material.cell(
+                                    field.field_frame,
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                    style,
+                                    field.phase,
+                                )
+                                for y in range(height)
+                                for x in range(width)
+                            ]
                         visible = sum(cell.glyph != " " for cell in cells) / len(cells)
                         self.assertGreater(visible, 0.04)
                         self.assertLess(visible, 0.52)
@@ -1243,6 +1621,11 @@ class RenderingBudgetTests(unittest.TestCase):
     def test_attention_color_is_not_spent_on_ordinary_body_intensity(self) -> None:
         self.assertEqual(_semantic_color_bucket(0.90, 0.0, 4), 2)
         self.assertEqual(_semantic_color_bucket(0.35, 0.10, 4), 3)
+
+    def test_rotating_surface_faces_use_the_ordinary_palette_colors(self) -> None:
+        self.assertEqual(_semantic_color_bucket(0.50, 0.0, 4, 0.10), 1)
+        self.assertEqual(_semantic_color_bucket(0.50, 0.0, 4, 0.90), 2)
+        self.assertEqual(_semantic_color_bucket(0.50, 0.20, 4, 0.10), 3)
 
     def test_terminal_columns_interpolate_instead_of_repeating_blocks(self) -> None:
         source = [0.0, 1.0]
@@ -1283,16 +1666,17 @@ class SelectedDirectionTests(unittest.TestCase):
                 self.assertEqual(config.render.edge, "defined")
                 self.assertEqual(config.render.afterglow, "quiet")
 
-    def test_material_control_does_not_request_an_organism_reset(self) -> None:
+    def test_listening_control_changes_context_without_resetting_bodies(self) -> None:
         config = load_config(None, None, "atlas")
         controls = _make_controls(config)
         ui = UiState()
-        material = controls["Look"][0]
+        listening = controls["Listening"][0]
 
-        message = material.adjust(config, 1, ui)
+        message = listening.adjust(config, 1, ui)
 
-        self.assertEqual(message, "material: fluid")
-        self.assertEqual(config.render.material, "fluid")
+        self.assertEqual(message, "listening: microphone")
+        self.assertEqual(config.listening_context, "microphone")
+        self.assertEqual(config.audio.capture_route, "microphone")
         self.assertFalse(ui.reset_lava)
 
     def test_compact_defaults_resolve_to_selected_direction(self) -> None:
@@ -1308,6 +1692,431 @@ class SelectedDirectionTests(unittest.TestCase):
         self.assertEqual(_product_preset_name_for_config(config), "speech")
         self.assertEqual(config.lava.reactivity, 1.0)
         self.assertEqual(config.fps, 22)
+
+
+class ThermalVolumeTests(unittest.TestCase):
+    @staticmethod
+    def _run_thermal_pass(
+        forces: AudioForces, story: NarrativeState, *, bodies: int = 1
+    ) -> AcousticOrganism:
+        organism = AcousticOrganism(body_limit=bodies)
+        for index, body in enumerate(organism.bodies[:bodies]):
+            body.x = 0.45 + index * 0.10
+            body.y = 0.58
+            body.vx = body.vy = 0.0
+            body.presence = 1.0
+        config = LavaConfig(blobs=bodies, drift=0.12, viscosity=0.90)
+        for _ in range(72):
+            organism.update(
+                1.0 / 12.0,
+                forces,
+                80,
+                24,
+                config,
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(cohesion=0.90),
+                story,
+                None,
+                True,
+            )
+        return organism
+
+    def test_sustained_pressure_warms_and_lifts_volume_wax_above_cold_wax(self) -> None:
+        cold = self._run_thermal_pass(AudioForces(), NarrativeState())
+        hot = self._run_thermal_pass(
+            AudioForces(bass=0.90, energy=0.80, bands=(0.70,) * 8),
+            NarrativeState(held_pressure=0.80, cadence=0.60),
+        )
+        cold_body = cold.bodies[0]
+        hot_body = hot.bodies[0]
+
+        self.assertTrue(hot_body.thermal_active)
+        self.assertGreater(hot_body.thermal_heat, cold_body.thermal_heat + 0.50)
+        self.assertLess(hot_body.thermal_viscosity, cold_body.thermal_viscosity)
+        self.assertLess(hot_body.y, cold_body.y - 0.10)
+
+    def test_nearby_warm_volume_bodies_form_a_bounded_mutual_bridge(self) -> None:
+        organism = self._run_thermal_pass(
+            AudioForces(bass=0.90, energy=0.80, bands=(0.70,) * 8),
+            NarrativeState(held_pressure=0.80, cadence=0.70),
+            bodies=2,
+        )
+        first, second = organism.bodies[:2]
+
+        self.assertGreater(first.bridge_strength, 0.35)
+        self.assertGreater(second.bridge_strength, 0.35)
+        self.assertGreater(first.adhesion, 0.35)
+        self.assertGreater(second.adhesion, 0.35)
+        self.assertLessEqual(first.bridge_strength, 1.0)
+        self.assertLessEqual(second.bridge_strength, 1.0)
+        self.assertAlmostEqual(
+            abs(math.sin(first.bridge_angle - second.bridge_angle)), 0.0, places=3
+        )
+
+    def test_thermal_anchors_compress_each_role_into_the_central_vessel(self) -> None:
+        composition = compose_tile(80, 24, 4)
+        organism = AcousticOrganism(body_limit=4)
+        compression = []
+        anchors = {}
+        for index, body in enumerate(organism.bodies[:4]):
+            broad = habitat_anchor(composition, index, 0.0)
+            thermal = thermal_habitat_anchor(
+                composition, index, 0.0, body.character.name
+            )
+            broad_distance = math.hypot(broad[0] - 0.5, broad[1] - 0.52)
+            thermal_distance = math.hypot(thermal[0] - 0.5, thermal[1] - 0.52)
+            compression.append(thermal_distance / broad_distance)
+            anchors[body.character.name] = thermal
+
+        self.assertTrue(all(0.80 <= ratio <= 0.90 for ratio in compression))
+        self.assertTrue(0.82 <= sum(compression) / len(compression) <= 0.88)
+        self.assertGreater(anchors["ballast"][1], anchors["listener"][1] + 0.12)
+        self.assertLess(anchors["glint"][1], 0.47)
+        self.assertGreater(abs(anchors["glint"][0] - 0.5), 0.16)
+        listener_distance = math.hypot(
+            anchors["listener"][0] - 0.5, anchors["listener"][1] - 0.52
+        )
+        self.assertEqual(
+            listener_distance,
+            min(math.hypot(x - 0.5, y - 0.52) for x, y in anchors.values()),
+        )
+        later_drifter = thermal_habitat_anchor(composition, 3, 4.0, "drifter")
+        self.assertGreater(math.dist(anchors["drifter"], later_drifter), 0.015)
+
+    def test_cooling_thickens_settles_and_releases_pressure_history(self) -> None:
+        organism = self._run_thermal_pass(
+            AudioForces(bass=0.90, energy=0.80, bands=(0.70,) * 8),
+            NarrativeState(held_pressure=0.80, cadence=0.60),
+        )
+        body = organism.bodies[0]
+        warm_y = body.y
+        warm_heat = body.thermal_heat
+        warm_viscosity = body.thermal_viscosity
+        warm_pressure = body.pressure_memory
+        config = LavaConfig(blobs=1, drift=0.12, viscosity=0.90)
+
+        for _ in range(120):
+            organism.update(
+                1.0 / 12.0,
+                AudioForces(),
+                80,
+                24,
+                config,
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(),
+                NarrativeState(),
+                None,
+                True,
+            )
+
+        self.assertLess(body.thermal_heat, warm_heat - 0.60)
+        self.assertGreater(body.thermal_viscosity, warm_viscosity + 0.20)
+        self.assertGreater(body.y, warm_y + 0.035)
+        self.assertGreater(warm_pressure, 0.10)
+        self.assertLess(body.pressure_memory, warm_pressure * 0.02)
+
+    def test_fast_volume_hit_disturbs_only_its_authored_target(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        strike = AudioForces(
+            transient=0.92,
+            tone=0.92,
+            hits=(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.96),
+        )
+
+        organism.update(
+            1.0 / 22.0,
+            strike,
+            80,
+            24,
+            config,
+            "buoyant",
+            CELL_ASPECT,
+            AffectiveState(),
+            NarrativeState(),
+            None,
+            True,
+        )
+
+        disturbed = [body for body in organism.bodies[:4] if body.afterglow >= 0.80]
+        self.assertEqual(len(disturbed), 1)
+        self.assertLess(
+            max(body.thermal_heat for body in organism.bodies[:4])
+            - min(body.thermal_heat for body in organism.bodies[:4]),
+            0.001,
+        )
+
+    def test_volume_keeps_nonbridged_cores_separated_during_sustained_heat(self) -> None:
+        organism = self._run_thermal_pass(
+            AudioForces(bass=0.90, energy=0.80, bands=(0.70,) * 8),
+            NarrativeState(held_pressure=0.80, cadence=0.70),
+            bodies=4,
+        )
+        axis_x, axis_y = tile_axis_scales(80, 24, CELL_ASPECT)
+        bridge = organism.dominant_bridge
+
+        for left in range(4):
+            for right in range(left + 1, 4):
+                if bridge == (left, right):
+                    continue
+                first = organism.bodies[left]
+                second = organism.bodies[right]
+                distance = math.hypot(
+                    (second.x - first.x) / axis_x,
+                    (second.y - first.y) / axis_y,
+                )
+                readable = (first.radius + second.radius) * 1.04 * 0.90
+                self.assertGreaterEqual(distance, readable)
+
+    def test_volume_preserves_authored_identity_phase_and_independent_motion(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        names = tuple(body.character.name for body in organism.bodies[:4])
+        phases = tuple(body.phase for body in organism.bodies[:4])
+        config = LavaConfig(blobs=4, drift=0.12, viscosity=0.90)
+        forces = AudioForces(bass=0.78, voice=0.55, energy=0.66, bands=(0.48,) * 8)
+
+        for _ in range(96):
+            organism.update(
+                1.0 / 22.0,
+                forces,
+                80,
+                24,
+                config,
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(cohesion=0.72),
+                NarrativeState(held_pressure=0.62, cadence=0.50),
+                None,
+                True,
+            )
+
+        self.assertEqual(tuple(body.character.name for body in organism.bodies[:4]), names)
+        self.assertEqual(tuple(body.phase for body in organism.bodies[:4]), phases)
+        motion = {
+            (round(body.vx, 4), round(body.vy, 4), round(body.z, 3))
+            for body in organism.bodies[:4]
+        }
+        self.assertEqual(len(motion), 4)
+
+    def test_volume_caps_pairwise_cast_without_changing_fluid_population(self) -> None:
+        volume = AcousticOrganism(body_limit=8)
+        volume_composition = volume.update(
+            1.0 / 22.0,
+            AudioForces(),
+            120,
+            40,
+            LavaConfig(blobs=8),
+            embody_posture=True,
+        )
+        fluid = AcousticOrganism(body_limit=8)
+        fluid_composition = fluid.update(
+            1.0 / 22.0,
+            AudioForces(),
+            120,
+            40,
+            LavaConfig(blobs=8),
+            embody_posture=False,
+        )
+
+        self.assertEqual(volume_composition.active_bodies, 4)
+        self.assertEqual(fluid_composition.active_bodies, 6)
+
+    def test_only_one_warm_bridge_pair_is_active_and_cooling_releases_it(self) -> None:
+        organism = self._run_thermal_pass(
+            AudioForces(bass=0.90, energy=0.80, bands=(0.70,) * 8),
+            NarrativeState(held_pressure=0.80, cadence=0.70),
+            bodies=4,
+        )
+        bridged = [body for body in organism.bodies[:4] if body.bridge_strength >= 0.08]
+
+        self.assertIsNotNone(organism.dominant_bridge)
+        self.assertEqual(len(bridged), 2)
+
+        config = LavaConfig(blobs=4, drift=0.12, viscosity=0.90)
+        for _ in range(72):
+            organism.update(
+                1.0 / 12.0,
+                AudioForces(),
+                80,
+                24,
+                config,
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(),
+                NarrativeState(),
+                None,
+                True,
+            )
+
+        self.assertIsNone(organism.dominant_bridge)
+        self.assertTrue(
+            all(body.bridge_strength < 0.02 for body in organism.bodies[:4])
+        )
+
+    def test_volume_selects_the_strongest_nearby_warm_bridge_pair(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        positions = ((0.40, 0.50), (0.51, 0.50), (0.68, 0.50), (0.78, 0.72))
+        heats = (0.95, 0.95, 0.68, 0.18)
+        for body, (x, y), heat in zip(organism.bodies[:4], positions, heats):
+            body.x = x
+            body.y = y
+            body.radius = body.base_radius = 0.09
+            body.thermal_heat = heat
+
+        organism.update(
+            1.0 / 120.0,
+            AudioForces(),
+            80,
+            24,
+            LavaConfig(blobs=4),
+            embody_posture=True,
+        )
+
+        self.assertEqual(organism.dominant_bridge, (0, 1))
+        bridged = [
+            index
+            for index, body in enumerate(organism.bodies[:4])
+            if body.bridge_strength > 0.0
+        ]
+        self.assertEqual(bridged, [0, 1])
+
+    def test_thermal_state_is_inactive_for_the_existing_fluid_text_physics_path(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        organism.update(
+            1.0 / 12.0,
+            AudioForces(bass=0.90, energy=0.80, transient=0.90, bands=(0.70,) * 8),
+            80,
+            24,
+            config,
+            "buoyant",
+            CELL_ASPECT,
+            AffectiveState(),
+            NarrativeState(held_pressure=0.80),
+            None,
+            False,
+        )
+
+        self.assertIsNone(organism.dominant_bridge)
+        self.assertTrue(all(not body.thermal_active for body in organism.bodies[:4]))
+        self.assertTrue(
+            all(body.flow_memory_x == body.flow_memory_y == 0.0 for body in organism.bodies[:4])
+        )
+
+
+class RadioSpeechEmbodimentTests(unittest.TestCase):
+    @staticmethod
+    def _advance(
+        organism: AcousticOrganism, forces: AudioForces, frames: int
+    ) -> None:
+        for _ in range(frames):
+            organism.update(
+                1.0 / 12.0,
+                forces,
+                80,
+                24,
+                LavaConfig(blobs=3),
+                "buoyant",
+                CELL_ASPECT,
+                AffectiveState(),
+                NarrativeState(),
+                behavior_for_context("radio"),
+            )
+
+    def test_radio_assigns_one_stable_speaker_while_other_bodies_listen(self) -> None:
+        organism = AcousticOrganism(body_limit=3)
+        speech = AudioForces(
+            voice=0.82,
+            detail=0.42,
+            tone=0.43,
+            bands=(0.05, 0.12, 0.62, 0.85, 0.70, 0.18, 0.06, 0.03),
+        )
+        self._advance(organism, speech, 36)
+        speaker = organism.speech_state.speaker_index
+        bodies = organism.bodies[:3]
+
+        self.assertEqual(speaker, 1)
+        self.assertGreater(bodies[speaker].speech_flow, 0.65)
+        self.assertTrue(
+            all(
+                body.listening > 0.45
+                for index, body in enumerate(bodies)
+                if index != speaker
+            )
+        )
+        self.assertGreater(
+            bodies[speaker].stretch_x,
+            bodies[0].stretch_x,
+        )
+
+    def test_radio_requires_sustained_timbre_change_before_a_speaker_handoff(self) -> None:
+        organism = AcousticOrganism(body_limit=3)
+        listener_voice = AudioForces(voice=0.80, tone=0.43, bands=(0.10, 0.20, 0.60, 0.82, 0.68, 0.18, 0.04, 0.02))
+        glint_voice = AudioForces(voice=0.80, tone=0.88, bands=(0.05, 0.08, 0.16, 0.28, 0.44, 0.66, 0.88, 0.70))
+        self._advance(organism, listener_voice, 24)
+        self.assertEqual(organism.speech_state.speaker_index, 1)
+
+        self._advance(organism, glint_voice, 20)
+        self.assertEqual(organism.speech_state.speaker_index, 1)
+        self._advance(organism, glint_voice, 8)
+        self.assertEqual(organism.speech_state.speaker_index, 2)
+
+    def test_radio_pause_releases_the_speaking_body_without_a_global_hit(self) -> None:
+        organism = AcousticOrganism(body_limit=3)
+        speech = AudioForces(voice=0.82, detail=0.42, tone=0.43, bands=(0.05, 0.12, 0.62, 0.85, 0.70, 0.18, 0.06, 0.03))
+        self._advance(organism, speech, 24)
+        speaker = organism.speech_state.speaker_index
+        self._advance(organism, AudioForces(), 8)
+
+        self.assertGreater(organism.speech_state.pause_release, 0.20)
+        self.assertLess(organism.speech_state.voice_flow, 0.10)
+        self.assertLess(organism.bodies[speaker].speech_flow, 0.45)
+        self.assertTrue(all(body.spike == 0.0 for body in organism.bodies[:3]))
+
+
+class FluidSurfaceRippleTests(unittest.TestCase):
+    def test_hit_injects_a_surface_wave_that_coasts_without_moving_the_cast(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        impact = AudioForces(
+            transient=0.94,
+            rhythm_impulse=0.80,
+            tone=0.35,
+            bands=(0.82, 0.64, 0.34, 0.22, 0.14, 0.08, 0.04, 0.02),
+            hits=(0.92, 0.56, 0.18, 0.08, 0.04, 0.02, 0.01, 0.01),
+        )
+        organism.update(
+            1.0 / 22.0,
+            impact,
+            44,
+            18,
+            config,
+            "buoyant",
+            surface_ripples=True,
+        )
+        wave_body = max(organism.bodies[:4], key=lambda body: body.surface_ripple)
+        before_phase = wave_body.surface_ripple_phase
+        before_wave = wave_body.surface_ripple
+        before_position = (wave_body.x, wave_body.y)
+
+        organism.update(
+            1.0 / 22.0,
+            AudioForces(),
+            44,
+            18,
+            config,
+            "buoyant",
+            surface_ripples=True,
+        )
+
+        self.assertTrue(wave_body.surface_ripples_active)
+        self.assertLessEqual(wave_body.spike, 0.10)
+        self.assertGreater(wave_body.surface_ripple_phase, before_phase)
+        self.assertGreater(wave_body.surface_ripple, 0.0)
+        self.assertLess(wave_body.surface_ripple, before_wave)
+        self.assertLess(math.dist(before_position, (wave_body.x, wave_body.y)), 0.015)
 
 
 if __name__ == "__main__":
