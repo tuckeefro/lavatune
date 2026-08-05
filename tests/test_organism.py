@@ -1468,6 +1468,24 @@ class CompositionTests(unittest.TestCase):
         self.assertLess(body.spike, 0.02)
         self.assertGreater(body.afterglow, body.spike)
 
+    def test_shape_pulse_is_local_and_releases_into_the_material(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        config = LavaConfig(blobs=4)
+        strike = AudioForces(transient=1.0, tone=0.86)
+
+        organism.update(1.0 / 22.0, strike, 44, 18, config, "lavalamp")
+
+        self.assertGreater(organism.bodies[2].shape_pulse, 0.30)
+        self.assertEqual(
+            [body.shape_pulse for body in organism.bodies[:2]], [0.0, 0.0]
+        )
+        self.assertEqual(organism.bodies[3].shape_pulse, 0.0)
+
+        for _ in range(24):
+            organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "lavalamp")
+
+        self.assertLess(organism.bodies[2].shape_pulse, 0.05)
+
     def test_transient_pressure_crosses_the_tile_and_recovers(self) -> None:
         organism = AcousticOrganism(body_limit=4)
         config = LavaConfig(blobs=4)

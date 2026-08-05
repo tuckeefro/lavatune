@@ -538,6 +538,10 @@ class Body:
     surface_ripple_angle: float = 0.0
     surface_ripple_phase: float = 0.0
     surface_ripples_active: bool = False
+    # A short silhouette-only response.  This is intentionally separate from
+    # velocity so an attack can deform the body without kicking the whole
+    # habitat into a jump.
+    shape_pulse: float = 0.0
 
 
 @dataclass(slots=True)
@@ -1298,6 +1302,24 @@ class AcousticOrganism:
             )
             stab_angle = body.impact_angle + body.phase * 0.37 + self.phase * 0.19
             stab_force = stab_event * (0.024 + forces.tone * 0.010) * body_scale
+            shape_target = clamp(
+                local_deviation * (0.84 if surface_ripples else 1.0)
+                + event * 0.68
+                + stab_event * 0.24
+            )
+            if shape_target > body.shape_pulse:
+                # Fast attack, soft release: the contour notices the event
+                # immediately, then returns through the material instead of
+                # snapping back on the next audio frame.
+                body.shape_pulse = lerp(
+                    body.shape_pulse,
+                    shape_target,
+                    1.0 - math.exp(-18.0 * dt),
+                )
+            else:
+                body.shape_pulse = max(
+                    body.shape_pulse * math.exp(-4.2 * dt), shape_target
+                )
 
             wave_x = 0.0
             wave_y = 0.0
@@ -1542,6 +1564,7 @@ class AcousticOrganism:
                 + affect.snap * 0.060
                 + story.interruption * 0.030
                 + story.resolution * 0.025
+                + body.shape_pulse * (0.105 + body.character.deformation * 0.045)
             )
             if embody_posture:
                 # Heat makes wax yield gradually. Keep attacks as brief
@@ -1556,8 +1579,9 @@ class AcousticOrganism:
                 )
             elif speaking:
                 target_radius *= 1.0 + body.speech_flow * 0.055 + body.speech_pulse * 0.022
-            body.base_radius = lerp(body.base_radius, target_radius, dt * 1.6)
-            body.radius = lerp(body.radius, body.base_radius, dt * 3.4)
+            radius_attack = 1.6 + body.shape_pulse * 2.0
+            body.base_radius = lerp(body.base_radius, target_radius, dt * radius_attack)
+            body.radius = lerp(body.radius, body.base_radius, dt * (3.4 + body.shape_pulse * 1.2))
 
             # Wall margins use physical tile geometry, so contact feels alike
             # in a wide current and a narrow chimney.
@@ -1620,13 +1644,13 @@ class AcousticOrganism:
                 shape_vx = body.flow_memory_x
                 shape_vy = body.flow_memory_y
                 shape_pressure = body.pressure_memory
-                shape_event = event * 0.32
+                shape_event = body.shape_pulse
                 shape_spike = body.spike * 0.38
             else:
                 shape_vx = body.vx
                 shape_vy = body.vy
                 shape_pressure = body.acoustic_pressure
-                shape_event = motion_event
+                shape_event = body.shape_pulse
                 shape_spike = motion_spike
             velocity_angle = math.atan2(shape_vy, shape_vx)
             speed_stretch = clamp(
@@ -1650,6 +1674,20 @@ class AcousticOrganism:
             rhythm_shape = rhythm_wave * rhythm_drive * 0.045 * body.character.deformation
             body.stretch_x += rhythm_shape
             body.stretch_y -= rhythm_shape * 0.72
+            quiet_flow = (
+                motion.idle_flow
+                * body.character.deformation
+                * (0.010 + cues.float_drive * 0.018)
+                * (1.0 - forces.transient * 0.42)
+            )
+            flow_phase = self.phase * (0.46 + forces.tempo * 0.24) + body.phase * 0.73
+            flow_wave = math.sin(flow_phase)
+            body.stretch_x += quiet_flow * (0.72 + flow_wave * 0.28)
+            body.stretch_y += quiet_flow * (0.54 - flow_wave * 0.18)
+            pulse_axis_x = 0.58 + 0.42 * abs(math.cos(body.impact_angle))
+            pulse_axis_y = 0.58 + 0.42 * abs(math.sin(body.impact_angle))
+            body.stretch_x += shape_event * 0.14 * pulse_axis_x
+            body.stretch_y += shape_event * 0.14 * pulse_axis_y
             chop_shape = (
                 cues.chop_wave * cues.chop_drive * 0.065 * body.character.deformation
             )
