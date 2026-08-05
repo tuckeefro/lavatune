@@ -297,6 +297,62 @@ class MotionProfile:
     collision: float
     audio_push: float
     surface_motion: float
+    planar_gain: float = 1.0
+    travel_limit: float = 1.0
+    orientation_gain: float = 1.0
+    planar_smoothing: float = 0.0
+    vocabulary_gain: float = 0.0
+
+
+@dataclass(slots=True, frozen=True)
+class MotionCues:
+    """Small motion vocabulary kept separate from the raw audio channels."""
+
+    float_drive: float = 0.0
+    chop_drive: float = 0.0
+    chop_wave: float = 0.0
+    stab_drive: float = 0.0
+    surge_drive: float = 0.0
+
+
+def motion_cues(
+    forces: AudioForces,
+    phase: float,
+    body_phase: float,
+    stab_gain: float = 0.0,
+) -> MotionCues:
+    """Derive slow and staccato movement intentions from already-mapped forces."""
+
+    float_drive = clamp(forces.tempo * (0.42 + forces.energy * 0.58))
+    chop_signal = clamp(
+        forces.detail * (0.35 + forces.tone * 0.65)
+        + forces.flux * 0.60
+        + forces.rhythm_density * 0.35
+        + forces.transient * 0.12
+    )
+    chop_drive = clamp(chop_signal * 1.10)
+    chop_phase = phase * (
+        7.0 + forces.tone * 5.0 + forces.rhythm_density * 6.0
+    ) + body_phase * 1.7
+    stab_drive = clamp(
+        (
+            max(0.0, forces.transient - 0.10) * 1.55
+            + forces.rhythm_impulse * 0.28
+            + forces.pulse * 0.08
+        )
+        * max(0.0, stab_gain)
+    )
+    return MotionCues(
+        float_drive=float_drive,
+        chop_drive=chop_drive,
+        chop_wave=math.sin(chop_phase),
+        stab_drive=stab_drive,
+        surge_drive=clamp(
+            forces.bass * 0.78
+            + forces.pulse * 0.16
+            + forces.rhythm_impulse * 0.12
+        ),
+    )
 
 
 MOTION_PROFILES: dict[str, MotionProfile] = {
@@ -304,6 +360,23 @@ MOTION_PROFILES: dict[str, MotionProfile] = {
     "heavy": MotionProfile("heavy", 0.95, 0.48, 0.44, 0.36, 0.58, 0.38),
     "buoyant": MotionProfile("buoyant", 0.88, 0.92, 0.78, 0.68, 0.72, 0.62),
     "tactile": MotionProfile("tactile", 0.84, 0.76, 0.64, 0.86, 1.00, 0.92),
+    # Lavatune's default body language: the signal still changes the inner
+    # state, contour, surface, and afterglow, while the cast drifts through
+    # the vessel with thick, slow lava-lamp motion.
+    "lavalamp": MotionProfile(
+        "lavalamp",
+        0.72,
+        0.36,
+        0.48,
+        0.24,
+        0.38,
+        0.78,
+        planar_gain=0.58,
+        travel_limit=0.44,
+        orientation_gain=0.72,
+        planar_smoothing=3.4,
+        vocabulary_gain=1.0,
+    ),
 }
 
 
@@ -321,12 +394,15 @@ class BehaviorProfile:
     rhythm_gain: float
     flux_gain: float
     pressure_wave_gain: float
+    stab_gain: float = 0.0
 
 
 LISTENING_BEHAVIORS: dict[str, BehaviorProfile] = {
     "podcast": BehaviorProfile("podcast", 2, 0.35, 1.00, 0.55, 0.14, 0.08, 0.05, 0.45, 0.0),
-    "radio": BehaviorProfile("radio", 3, 0.48, 0.62, 0.42, 0.22, 0.32, 0.20, 0.32, 0.22),
-    "music": BehaviorProfile("music", 4, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00),
+    # Radio and music share nearly the same continuous motion envelope. Radio
+    # keeps its speaker/listener cast, while music alone gets local stabs.
+    "radio": BehaviorProfile("radio", 3, 0.58, 0.66, 0.52, 0.30, 0.44, 0.28, 0.48, 0.24, 0.0),
+    "music": BehaviorProfile("music", 4, 0.66, 0.70, 0.60, 0.40, 0.52, 0.36, 0.58, 0.30, 0.86),
     "microphone": BehaviorProfile("microphone", 1, 0.08, 1.00, 0.34, 0.10, 0.05, 0.04, 0.24, 0.0),
 }
 
@@ -441,6 +517,8 @@ class Body:
     thermal_active: bool = False
     flow_memory_x: float = 0.0
     flow_memory_y: float = 0.0
+    planar_force_x: float = 0.0
+    planar_force_y: float = 0.0
     pressure_memory: float = 0.0
     speech_flow: float = 0.0
     speech_pulse: float = 0.0
@@ -1142,6 +1220,22 @@ class AcousticOrganism:
             rhythm_drive = forces.rhythm_density * (0.32 + forces.energy * 0.68)
             rhythm_phase = self.phase * (6.0 + forces.rhythm_density * 10.0) + body.phase * 1.7
             rhythm_wave = math.sin(rhythm_phase)
+            cues = (
+                motion_cues(
+                    forces,
+                    self.phase,
+                    body.phase,
+                    behavior.stab_gain if behavior is not None else 0.0,
+                )
+                if motion.vocabulary_gain > 0.0
+                else MotionCues()
+            )
+            stab_event = cues.stab_drive if index == impact_target else 0.0
+            float_lift = 1.0 + cues.float_drive * (
+                0.44 + body.character.idle * 0.22
+            )
+            curl_x *= float_lift
+            curl_y *= float_lift
             if embody_posture:
                 emotional_cohesion = posture.synchrony * 0.030
                 emotional_contraction = posture.contraction * 0.018
@@ -1185,8 +1279,18 @@ class AcousticOrganism:
                 * (0.018 + forces.bass * 0.035)
                 / body.character.mass
             )
+            thermal_flow *= 1.0 + cues.float_drive * 0.58
             thermal_lift = body.thermal_buoyancy if embody_posture else 0.0
             body_scale = 1.0 / body.character.mass
+            chop_angle = body.impact_angle + body.phase * 0.63 + self.phase * 0.41
+            chop_force = (
+                cues.chop_wave
+                * cues.chop_drive
+                * (0.014 + forces.tempo * 0.006)
+                * body_scale
+            )
+            stab_angle = body.impact_angle + body.phase * 0.37 + self.phase * 0.19
+            stab_force = stab_event * (0.024 + forces.tone * 0.010) * body_scale
 
             wave_x = 0.0
             wave_y = 0.0
@@ -1219,8 +1323,10 @@ class AcousticOrganism:
                 + story.resolution * 0.004
                 + tempo_drive * 0.010
                 + rhythm_drive * 0.009
+                + cues.float_drive * 0.012
+                + cues.surge_drive * 0.004
             )
-            body.vx += (
+            planar_force_x = (
                 curl_x * acceleration * self.composition.horizontal_flow
                 + outward_x * bass_push * 0.110 * body_scale
                 + voice_swirl_x * 0.125
@@ -1248,8 +1354,10 @@ class AcousticOrganism:
                 + role_pull_x
                 + role_open_x
                 + speech_pull_x
-            ) * dt
-            body.vy += (
+                + math.cos(chop_angle) * chop_force
+                + math.cos(stab_angle) * stab_force
+            ) * motion.planar_gain
+            planar_force_y = (
                 curl_y * acceleration * self.composition.vertical_flow
                 + thermal_flow
                 + thermal_lift
@@ -1283,7 +1391,22 @@ class AcousticOrganism:
                 - affect.yearning
                 * max(body.character.voice, body.character.detail * 0.62)
                 * 0.010
-            ) * dt
+                + math.sin(chop_angle) * chop_force
+                + math.sin(stab_angle) * stab_force
+            ) * motion.planar_gain
+            if motion.planar_smoothing > 0.0:
+                smoothing = 1.0 - math.exp(-motion.planar_smoothing * dt)
+                body.planar_force_x = lerp(
+                    body.planar_force_x, planar_force_x, smoothing
+                )
+                body.planar_force_y = lerp(
+                    body.planar_force_y, planar_force_y, smoothing
+                )
+            else:
+                body.planar_force_x = planar_force_x
+                body.planar_force_y = planar_force_y
+            body.vx += body.planar_force_x * dt
+            body.vy += body.planar_force_y * dt
 
             thermal_drag = (
                 max(0.0, body.thermal_viscosity - 0.62) * 1.15
@@ -1306,7 +1429,9 @@ class AcousticOrganism:
                 + forces.pulse * 0.035
                 + forces.rhythm_density * 0.022
                 + forces.rhythm_impulse * 0.024
-            )
+                + cues.float_drive * 0.065
+                + cues.surge_drive * 0.012
+            ) * motion.travel_limit
             speed = math.hypot(body.vx, body.vy)
             if speed > speed_limit:
                 body.vx *= speed_limit / speed
@@ -1331,7 +1456,9 @@ class AcousticOrganism:
                 + affect.release * 0.028
                 + affect.catharsis * 0.040
             ) * math.sin(body.phase * 1.17 + self.phase * 0.72)
-            body.vz += ((depth_target - body.z) * 0.72 + depth_push) * dt
+            body.vz += (
+                (depth_target - body.z) * 0.72 + depth_push
+            ) * motion.travel_limit * dt
             body.vz *= math.exp(-(1.35 + (1.0 - viscosity) * 1.8) * dt)
             body.vz = clamp(body.vz, -0.14, 0.14)
             body.z += body.vz * dt
@@ -1350,25 +1477,37 @@ class AcousticOrganism:
             flip_gain = behavior.transient_gain if behavior is not None else 1.0
             impact = max(0.0, motion_event - previous_afterglow * fluid_motion_gain)
             turn = body.character.turn
-            body.angular_yaw += dt * (
-                0.18 * turn
-                + forces.tempo * 1.85 * turn_gain * turn
-                + forces.bass * body.character.bass * 0.52
-                + forces.voice * body.character.voice * 0.30
-                + role_yaw
-            ) + impact * 2.35 * flip_gain * turn
-            body.angular_pitch += dt * (
-                0.10 * turn
-                + forces.bass * body.character.bass * 0.88 * turn_gain
-                + motion_spike * 0.72 * flip_gain
-                + role_pitch
-            ) + impact * 1.25 * flip_gain
-            body.angular_roll += dt * (
-                0.07 * turn
-                + forces.tempo * 0.38 * turn_gain
-                + forces.detail * body.character.detail * 0.84 * turn_gain
-                + role_roll
-            ) + impact * 1.55 * flip_gain * turn
+            body.angular_yaw += (
+                dt
+                * (
+                    0.18 * turn
+                    + forces.tempo * 1.85 * turn_gain * turn
+                    + forces.bass * body.character.bass * 0.52
+                    + forces.voice * body.character.voice * 0.30
+                    + role_yaw
+                )
+                + impact * 2.35 * flip_gain * turn
+            ) * motion.orientation_gain
+            body.angular_pitch += (
+                dt
+                * (
+                    0.10 * turn
+                    + forces.bass * body.character.bass * 0.88 * turn_gain
+                    + motion_spike * 0.72 * flip_gain
+                    + role_pitch
+                )
+                + impact * 1.25 * flip_gain
+            ) * motion.orientation_gain
+            body.angular_roll += (
+                dt
+                * (
+                    0.07 * turn
+                    + forces.tempo * 0.38 * turn_gain
+                    + forces.detail * body.character.detail * 0.84 * turn_gain
+                    + role_roll
+                )
+                + impact * 1.55 * flip_gain * turn
+            ) * motion.orientation_gain
             angular_damping = math.exp(
                 -(1.45 + (1.0 - forces.energy) * 0.50 + posture.stillness * 0.35) * dt
             )
@@ -1423,22 +1562,26 @@ class AcousticOrganism:
                 wall_pressure_x = clamp((margin_x - body.x) / max(0.02, margin_x))
                 body.x = margin_x
                 body.vx = abs(body.vx) * (0.16 + motion.collision * 0.18)
+                body.planar_force_x = max(0.0, body.planar_force_x)
             elif body.x > 1.0 - margin_x:
                 wall_pressure_x = clamp(
                     (body.x - (1.0 - margin_x)) / max(0.02, margin_x)
                 )
                 body.x = 1.0 - margin_x
                 body.vx = -abs(body.vx) * (0.16 + motion.collision * 0.18)
+                body.planar_force_x = min(0.0, body.planar_force_x)
             if body.y < margin_y:
                 wall_pressure_y = clamp((margin_y - body.y) / max(0.02, margin_y))
                 body.y = margin_y
                 body.vy = abs(body.vy) * (0.14 + motion.collision * 0.16)
+                body.planar_force_y = max(0.0, body.planar_force_y)
             elif body.y > 1.0 - margin_y:
                 wall_pressure_y = clamp(
                     (body.y - (1.0 - margin_y)) / max(0.02, margin_y)
                 )
                 body.y = 1.0 - margin_y
                 body.vy = -abs(body.vy) * (0.14 + motion.collision * 0.16)
+                body.planar_force_y = min(0.0, body.planar_force_y)
 
             body.wall_pressure_x = max(
                 body.wall_pressure_x * math.exp(-4.0 * dt), wall_pressure_x
@@ -1500,6 +1643,11 @@ class AcousticOrganism:
             rhythm_shape = rhythm_wave * rhythm_drive * 0.045 * body.character.deformation
             body.stretch_x += rhythm_shape
             body.stretch_y -= rhythm_shape * 0.72
+            chop_shape = (
+                cues.chop_wave * cues.chop_drive * 0.065 * body.character.deformation
+            )
+            body.stretch_x += chop_shape * (0.55 + 0.45 * abs(math.cos(chop_angle)))
+            body.stretch_y -= chop_shape * (0.35 + 0.35 * abs(math.sin(chop_angle)))
             yearning_shape = (
                 affect.yearning
                 * max(body.character.voice, body.character.detail * 0.70)

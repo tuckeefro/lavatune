@@ -122,7 +122,7 @@ class ReactionLatch:
 class LavaField:
     """Own one renderable organism and translate audio frames into its forces."""
 
-    def __init__(self, motion_profile: str = "buoyant") -> None:
+    def __init__(self, motion_profile: str = "lavalamp") -> None:
         self.w = 0
         self.h = 0
         self.motion_profile = motion_profile

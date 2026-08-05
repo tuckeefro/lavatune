@@ -18,6 +18,12 @@ from .config import (
 )
 from .doctor import format_report, inspect_environment
 from .text import sanitize_display_text
+from .motion import (
+    DEFAULT_MOTION_ANALYSIS_PATH,
+    MOTION_ANALYSIS_MAX_SECONDS,
+    MOTION_ANALYSIS_MIN_SECONDS,
+    capture_motion_analysis,
+)
 from .trace import DEFAULT_TRACE_PATH, TRACE_MAX_SECONDS, TRACE_MIN_SECONDS, capture_trace
 
 
@@ -135,6 +141,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--trace-output",
         help=f"Feature-trace path (default: {DEFAULT_TRACE_PATH}).",
     )
+    parser.add_argument(
+        "--motion-analysis",
+        type=float,
+        metavar="SECONDS",
+        help=(
+            "Analyze live production motion for one bounded pass, then exit "
+            f"({MOTION_ANALYSIS_MIN_SECONDS:g}-{MOTION_ANALYSIS_MAX_SECONDS:g} seconds; no PCM is stored)."
+        ),
+    )
+    parser.add_argument(
+        "--motion-output",
+        help=f"Motion-analysis path (default: {DEFAULT_MOTION_ANALYSIS_PATH}).",
+    )
     return parser
 
 
@@ -146,13 +165,21 @@ def main() -> int:
         parser.error("--no-audio-probe requires --doctor")
     if args.trace_output and args.trace_once is None:
         parser.error("--trace-output requires --trace-once")
+    if args.motion_output and args.motion_analysis is None:
+        parser.error("--motion-output requires --motion-analysis")
+    if args.trace_once is not None and args.motion_analysis is not None:
+        parser.error("--trace-once and --motion-analysis cannot be combined")
     if args.trace_once is not None and args.demo:
         parser.error("--trace-once captures live audio and cannot be used with --demo")
+    if args.motion_analysis is not None and args.demo:
+        parser.error("--motion-analysis captures live audio and cannot be used with --demo")
     if args.canvas and args.renderer and args.renderer != "canvas":
         parser.error("--canvas cannot be combined with --renderer tui")
     renderer_name = "canvas" if args.canvas else args.renderer
     if args.trace_once is not None and renderer_name == "canvas":
         parser.error("--trace-once cannot be used with the canvas renderer")
+    if args.motion_analysis is not None and renderer_name == "canvas":
+        parser.error("--motion-analysis cannot be used with the canvas renderer")
 
     if args.list_themes:
         for theme in DEFAULT_THEME_NAMES:
@@ -218,6 +245,25 @@ def main() -> int:
             f"Trace complete: {result.samples} feature samples from "
             f"{result.frames} analysis frames at {result.path}"
         )
+        return 0
+
+    if args.motion_analysis is not None:
+        try:
+            result = capture_motion_analysis(
+                config,
+                args.motion_analysis,
+                DEFAULT_MOTION_ANALYSIS_PATH
+                if args.motion_output is None
+                else Path(args.motion_output),
+            )
+        except RuntimeError as exc:
+            print(sanitize_display_text(str(exc), max_chars=500), file=sys.stderr)
+            return 1
+        print(
+            f"Motion analysis complete: {result.samples} motion samples from "
+            f"{result.frames} analysis frames at {result.path}"
+        )
+        print(result.summary)
         return 0
 
     if config.render.renderer == "canvas":
