@@ -330,14 +330,24 @@ def motion_cues(
 ) -> MotionCues:
     """Derive slow and staccato movement intentions from already-mapped forces."""
 
-    float_drive = clamp(forces.tempo * (0.42 + forces.energy * 0.58))
+    music_context = stab_gain > 0.0
+    float_drive = clamp(
+        forces.tempo
+        * (
+            0.52 + forces.energy * 0.70
+            if music_context
+            else 0.42 + forces.energy * 0.58
+        )
+    )
     chop_signal = clamp(
         forces.detail * (0.35 + forces.tone * 0.65)
         + forces.flux * 0.60
         + forces.rhythm_density * 0.35
         + forces.transient * 0.12
     )
-    chop_drive = clamp(chop_signal * 1.10)
+    # Music keeps the chop vocabulary, but gives it less directional force so
+    # the same detail becomes contour texture instead of nervous travel.
+    chop_drive = clamp(chop_signal * (0.92 if music_context else 1.10))
     chop_phase = phase * (
         7.0 + forces.tone * 5.0 + forces.rhythm_density * 6.0
     ) + body_phase * 1.7
@@ -1300,6 +1310,8 @@ class AcousticOrganism:
                 * (0.009 + forces.tempo * 0.004)
                 * body_scale
             )
+            if behavior is not None and behavior.name == "music":
+                chop_force *= 0.56
             stab_angle = body.impact_angle + body.phase * 0.37 + self.phase * 0.19
             stab_force = stab_event * (0.024 + forces.tone * 0.010) * body_scale
             shape_target = clamp(
@@ -1695,7 +1707,10 @@ class AcousticOrganism:
             body.stretch_x += shape_event * 0.25 * pulse_axis_x
             body.stretch_y += shape_event * 0.25 * pulse_axis_y
             chop_shape = (
-                cues.chop_wave * cues.chop_drive * 0.065 * body.character.deformation
+                cues.chop_wave
+                * cues.chop_drive
+                * (0.086 if behavior is not None and behavior.name == "music" else 0.065)
+                * body.character.deformation
             )
             body.stretch_x += chop_shape * (0.55 + 0.45 * abs(math.cos(chop_angle)))
             body.stretch_y -= chop_shape * (0.35 + 0.35 * abs(math.sin(chop_angle)))

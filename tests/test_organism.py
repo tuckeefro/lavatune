@@ -797,6 +797,20 @@ class CompositionTests(unittest.TestCase):
         self.assertGreater(scream.chop_drive, 0.80)
         self.assertLess(slow.chop_drive, 0.05)
 
+    def test_music_moves_detail_into_shape_before_directional_travel(self) -> None:
+        forces = AudioForces(
+            detail=0.72,
+            energy=0.44,
+            flux=0.60,
+            tempo=0.25,
+            tone=0.62,
+        )
+        music = motion_cues(forces, 0.0, 0.0, behavior_for_context("music").stab_gain)
+        radio = motion_cues(forces, 0.0, 0.0, behavior_for_context("radio").stab_gain)
+
+        self.assertGreater(music.float_drive, radio.float_drive)
+        self.assertLess(music.chop_drive, radio.chop_drive)
+
     def test_music_stabs_are_separate_from_radio_motion(self) -> None:
         strike = AudioForces(transient=0.70, pulse=0.62, rhythm_impulse=0.54)
         music = motion_cues(
