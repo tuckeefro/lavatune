@@ -301,6 +301,43 @@ class MotionProfile:
     travel_limit: float = 1.0
     orientation_gain: float = 1.0
     planar_smoothing: float = 0.0
+    vocabulary_gain: float = 0.0
+
+
+@dataclass(slots=True, frozen=True)
+class MotionCues:
+    """Small motion vocabulary kept separate from the raw audio channels."""
+
+    float_drive: float = 0.0
+    chop_drive: float = 0.0
+    chop_wave: float = 0.0
+    surge_drive: float = 0.0
+
+
+def motion_cues(forces: AudioForces, phase: float, body_phase: float) -> MotionCues:
+    """Derive slow and staccato movement intentions from already-mapped forces."""
+
+    float_drive = clamp(forces.tempo * (0.42 + forces.energy * 0.58))
+    chop_signal = clamp(
+        forces.detail * (0.35 + forces.tone * 0.65)
+        + forces.flux * 0.60
+        + forces.rhythm_density * 0.35
+        + forces.transient * 0.12
+    )
+    chop_drive = clamp(chop_signal * 1.10)
+    chop_phase = phase * (
+        7.0 + forces.tone * 5.0 + forces.rhythm_density * 6.0
+    ) + body_phase * 1.7
+    return MotionCues(
+        float_drive=float_drive,
+        chop_drive=chop_drive,
+        chop_wave=math.sin(chop_phase),
+        surge_drive=clamp(
+            forces.bass * 0.78
+            + forces.pulse * 0.16
+            + forces.rhythm_impulse * 0.12
+        ),
+    )
 
 
 MOTION_PROFILES: dict[str, MotionProfile] = {
@@ -323,6 +360,7 @@ MOTION_PROFILES: dict[str, MotionProfile] = {
         travel_limit=0.44,
         orientation_gain=0.72,
         planar_smoothing=3.4,
+        vocabulary_gain=1.0,
     ),
 }
 
@@ -1164,6 +1202,16 @@ class AcousticOrganism:
             rhythm_drive = forces.rhythm_density * (0.32 + forces.energy * 0.68)
             rhythm_phase = self.phase * (6.0 + forces.rhythm_density * 10.0) + body.phase * 1.7
             rhythm_wave = math.sin(rhythm_phase)
+            cues = (
+                motion_cues(forces, self.phase, body.phase)
+                if motion.vocabulary_gain > 0.0
+                else MotionCues()
+            )
+            float_lift = 1.0 + cues.float_drive * (
+                0.44 + body.character.idle * 0.22
+            )
+            curl_x *= float_lift
+            curl_y *= float_lift
             if embody_posture:
                 emotional_cohesion = posture.synchrony * 0.030
                 emotional_contraction = posture.contraction * 0.018
@@ -1207,8 +1255,16 @@ class AcousticOrganism:
                 * (0.018 + forces.bass * 0.035)
                 / body.character.mass
             )
+            thermal_flow *= 1.0 + cues.float_drive * 0.58
             thermal_lift = body.thermal_buoyancy if embody_posture else 0.0
             body_scale = 1.0 / body.character.mass
+            chop_angle = body.impact_angle + body.phase * 0.63 + self.phase * 0.41
+            chop_force = (
+                cues.chop_wave
+                * cues.chop_drive
+                * (0.014 + forces.tempo * 0.006)
+                * body_scale
+            )
 
             wave_x = 0.0
             wave_y = 0.0
@@ -1241,6 +1297,8 @@ class AcousticOrganism:
                 + story.resolution * 0.004
                 + tempo_drive * 0.010
                 + rhythm_drive * 0.009
+                + cues.float_drive * 0.012
+                + cues.surge_drive * 0.004
             )
             planar_force_x = (
                 curl_x * acceleration * self.composition.horizontal_flow
@@ -1270,6 +1328,7 @@ class AcousticOrganism:
                 + role_pull_x
                 + role_open_x
                 + speech_pull_x
+                + math.cos(chop_angle) * chop_force
             ) * motion.planar_gain
             planar_force_y = (
                 curl_y * acceleration * self.composition.vertical_flow
@@ -1305,6 +1364,7 @@ class AcousticOrganism:
                 - affect.yearning
                 * max(body.character.voice, body.character.detail * 0.62)
                 * 0.010
+                + math.sin(chop_angle) * chop_force
             ) * motion.planar_gain
             if motion.planar_smoothing > 0.0:
                 smoothing = 1.0 - math.exp(-motion.planar_smoothing * dt)
@@ -1341,6 +1401,8 @@ class AcousticOrganism:
                 + forces.pulse * 0.035
                 + forces.rhythm_density * 0.022
                 + forces.rhythm_impulse * 0.024
+                + cues.float_drive * 0.065
+                + cues.surge_drive * 0.012
             ) * motion.travel_limit
             speed = math.hypot(body.vx, body.vy)
             if speed > speed_limit:
@@ -1553,6 +1615,11 @@ class AcousticOrganism:
             rhythm_shape = rhythm_wave * rhythm_drive * 0.045 * body.character.deformation
             body.stretch_x += rhythm_shape
             body.stretch_y -= rhythm_shape * 0.72
+            chop_shape = (
+                cues.chop_wave * cues.chop_drive * 0.065 * body.character.deformation
+            )
+            body.stretch_x += chop_shape * (0.55 + 0.45 * abs(math.cos(chop_angle)))
+            body.stretch_y -= chop_shape * (0.35 + 0.35 * abs(math.sin(chop_angle)))
             yearning_shape = (
                 affect.yearning
                 * max(body.character.voice, body.character.detail * 0.70)

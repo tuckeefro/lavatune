@@ -37,6 +37,7 @@ from lavatune.organism import (
     compose_tile,
     habitat_anchor,
     measure_field,
+    motion_cues,
     shared_posture,
     thermal_habitat_anchor,
     tile_axis_scales,
@@ -775,6 +776,19 @@ class NarrativeTests(unittest.TestCase):
 
 
 class CompositionTests(unittest.TestCase):
+    def test_motion_cues_split_tempo_float_from_high_tone_chop(self) -> None:
+        slow = motion_cues(AudioForces(tempo=0.12, energy=0.60), 0.0, 0.0)
+        fast = motion_cues(AudioForces(tempo=0.88, energy=0.60), 0.0, 0.0)
+        scream = motion_cues(
+            AudioForces(detail=0.92, tone=0.94, flux=0.82, rhythm_density=0.40),
+            0.0,
+            0.0,
+        )
+
+        self.assertGreater(fast.float_drive, slow.float_drive * 5.0)
+        self.assertGreater(scream.chop_drive, 0.80)
+        self.assertLess(slow.chop_drive, 0.05)
+
     def test_lavalamp_slows_planar_action_without_suppressing_inner_response(self) -> None:
         config = LavaConfig(blobs=4, drift=0.22, viscosity=0.95)
         forces = AudioForces(
