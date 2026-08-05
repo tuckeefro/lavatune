@@ -297,6 +297,9 @@ class MotionProfile:
     collision: float
     audio_push: float
     surface_motion: float
+    planar_gain: float = 1.0
+    travel_limit: float = 1.0
+    orientation_gain: float = 1.0
 
 
 MOTION_PROFILES: dict[str, MotionProfile] = {
@@ -304,6 +307,21 @@ MOTION_PROFILES: dict[str, MotionProfile] = {
     "heavy": MotionProfile("heavy", 0.95, 0.48, 0.44, 0.36, 0.58, 0.38),
     "buoyant": MotionProfile("buoyant", 0.88, 0.92, 0.78, 0.68, 0.72, 0.62),
     "tactile": MotionProfile("tactile", 0.84, 0.76, 0.64, 0.86, 1.00, 0.92),
+    # Lavatune's default body language: the signal still changes the inner
+    # state, contour, surface, and afterglow, while the cast drifts through
+    # the vessel with thick, slow lava-lamp motion.
+    "lavalamp": MotionProfile(
+        "lavalamp",
+        0.72,
+        0.36,
+        0.48,
+        0.24,
+        0.38,
+        0.78,
+        planar_gain=0.58,
+        travel_limit=0.44,
+        orientation_gain=0.72,
+    ),
 }
 
 
@@ -1248,7 +1266,7 @@ class AcousticOrganism:
                 + role_pull_x
                 + role_open_x
                 + speech_pull_x
-            ) * dt
+            ) * motion.planar_gain * dt
             body.vy += (
                 curl_y * acceleration * self.composition.vertical_flow
                 + thermal_flow
@@ -1283,7 +1301,7 @@ class AcousticOrganism:
                 - affect.yearning
                 * max(body.character.voice, body.character.detail * 0.62)
                 * 0.010
-            ) * dt
+            ) * motion.planar_gain * dt
 
             thermal_drag = (
                 max(0.0, body.thermal_viscosity - 0.62) * 1.15
@@ -1306,7 +1324,7 @@ class AcousticOrganism:
                 + forces.pulse * 0.035
                 + forces.rhythm_density * 0.022
                 + forces.rhythm_impulse * 0.024
-            )
+            ) * motion.travel_limit
             speed = math.hypot(body.vx, body.vy)
             if speed > speed_limit:
                 body.vx *= speed_limit / speed
@@ -1331,7 +1349,9 @@ class AcousticOrganism:
                 + affect.release * 0.028
                 + affect.catharsis * 0.040
             ) * math.sin(body.phase * 1.17 + self.phase * 0.72)
-            body.vz += ((depth_target - body.z) * 0.72 + depth_push) * dt
+            body.vz += (
+                (depth_target - body.z) * 0.72 + depth_push
+            ) * motion.travel_limit * dt
             body.vz *= math.exp(-(1.35 + (1.0 - viscosity) * 1.8) * dt)
             body.vz = clamp(body.vz, -0.14, 0.14)
             body.z += body.vz * dt
@@ -1350,25 +1370,37 @@ class AcousticOrganism:
             flip_gain = behavior.transient_gain if behavior is not None else 1.0
             impact = max(0.0, motion_event - previous_afterglow * fluid_motion_gain)
             turn = body.character.turn
-            body.angular_yaw += dt * (
-                0.18 * turn
-                + forces.tempo * 1.85 * turn_gain * turn
-                + forces.bass * body.character.bass * 0.52
-                + forces.voice * body.character.voice * 0.30
-                + role_yaw
-            ) + impact * 2.35 * flip_gain * turn
-            body.angular_pitch += dt * (
-                0.10 * turn
-                + forces.bass * body.character.bass * 0.88 * turn_gain
-                + motion_spike * 0.72 * flip_gain
-                + role_pitch
-            ) + impact * 1.25 * flip_gain
-            body.angular_roll += dt * (
-                0.07 * turn
-                + forces.tempo * 0.38 * turn_gain
-                + forces.detail * body.character.detail * 0.84 * turn_gain
-                + role_roll
-            ) + impact * 1.55 * flip_gain * turn
+            body.angular_yaw += (
+                dt
+                * (
+                    0.18 * turn
+                    + forces.tempo * 1.85 * turn_gain * turn
+                    + forces.bass * body.character.bass * 0.52
+                    + forces.voice * body.character.voice * 0.30
+                    + role_yaw
+                )
+                + impact * 2.35 * flip_gain * turn
+            ) * motion.orientation_gain
+            body.angular_pitch += (
+                dt
+                * (
+                    0.10 * turn
+                    + forces.bass * body.character.bass * 0.88 * turn_gain
+                    + motion_spike * 0.72 * flip_gain
+                    + role_pitch
+                )
+                + impact * 1.25 * flip_gain
+            ) * motion.orientation_gain
+            body.angular_roll += (
+                dt
+                * (
+                    0.07 * turn
+                    + forces.tempo * 0.38 * turn_gain
+                    + forces.detail * body.character.detail * 0.84 * turn_gain
+                    + role_roll
+                )
+                + impact * 1.55 * flip_gain * turn
+            ) * motion.orientation_gain
             angular_damping = math.exp(
                 -(1.45 + (1.0 - forces.energy) * 0.50 + posture.stillness * 0.35) * dt
             )

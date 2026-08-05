@@ -30,6 +30,7 @@ from lavatune.organism import (
     behavior_for_context,
     NarrativeState,
     NarrativeTracker,
+    MOTION_PROFILES,
     SharedPosture,
     adaptive_centroid_axis,
     circulation_at,
@@ -774,6 +775,49 @@ class NarrativeTests(unittest.TestCase):
 
 
 class CompositionTests(unittest.TestCase):
+    def test_lavalamp_slows_planar_action_without_suppressing_inner_response(self) -> None:
+        config = LavaConfig(blobs=4, drift=0.22, viscosity=0.95)
+        forces = AudioForces(
+            bass=0.72,
+            detail=0.76,
+            transient=0.82,
+            energy=0.70,
+            tempo=0.64,
+            pulse=0.66,
+            bands=(0.72, 0.64, 0.48, 0.38, 0.32, 0.42, 0.68, 0.76),
+        )
+        buoyant = AcousticOrganism(body_limit=4)
+        lavalamp = AcousticOrganism(body_limit=4)
+        buoyant.seed_for_tile(44, 18, 4)
+        lavalamp.seed_for_tile(44, 18, 4)
+        starts = [(body.x, body.y) for body in lavalamp.bodies[:4]]
+        initial_radii = [body.radius for body in lavalamp.bodies[:4]]
+
+        for _ in range(60):
+            buoyant.update(1.0 / 22.0, forces, 44, 18, config, "buoyant")
+            lavalamp.update(1.0 / 22.0, forces, 44, 18, config, "lavalamp")
+
+        buoyant_travel = sum(
+            math.hypot(body.x - start_x, body.y - start_y)
+            for body, (start_x, start_y) in zip(buoyant.bodies[:4], starts)
+        )
+        lavalamp_travel = sum(
+            math.hypot(body.x - start_x, body.y - start_y)
+            for body, (start_x, start_y) in zip(lavalamp.bodies[:4], starts)
+        )
+
+        self.assertLess(lavalamp_travel, buoyant_travel * 0.72)
+        self.assertGreater(max(body.afterglow for body in lavalamp.bodies[:4]), 0.70)
+        self.assertGreater(
+            max(
+                abs(body.radius - initial_radius)
+                for body, initial_radius in zip(lavalamp.bodies[:4], initial_radii)
+            ),
+            0.01,
+        )
+        self.assertLess(MOTION_PROFILES["lavalamp"].planar_gain, 0.70)
+        self.assertGreater(MOTION_PROFILES["lavalamp"].surface_motion, 0.70)
+
     def test_volume_scars_persist_until_a_new_stable_pattern_earns_recovery(self) -> None:
         config = LavaConfig(blobs=4)
         organism = AcousticOrganism(body_limit=4)
@@ -1687,7 +1731,7 @@ class SelectedDirectionTests(unittest.TestCase):
         config.audio.frame_size = 1024
         config = apply_cli_overrides(config, compact_tile=True, hide_stats=True)
 
-        self.assertEqual(LavaField().motion_profile, "buoyant")
+        self.assertEqual(LavaField().motion_profile, "lavalamp")
         self.assertEqual(_scene_name_for_config(config), "soft-afterglow")
         self.assertEqual(_product_preset_name_for_config(config), "speech")
         self.assertEqual(config.lava.reactivity, 1.0)
