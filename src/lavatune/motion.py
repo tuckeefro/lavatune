@@ -238,8 +238,11 @@ def capture_motion_analysis(
 
     if not analyzer.records:
         raise RuntimeError("No live audio frames arrived during motion analysis.")
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(analyzer.payload(), indent=2) + "\n", encoding="utf-8")
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(analyzer.payload(), indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"Could not write motion analysis to '{output}': {exc}") from exc
     return MotionAnalysisResult(
         output,
         len(analyzer.records),
