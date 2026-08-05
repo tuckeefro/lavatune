@@ -110,6 +110,12 @@ The subjective behavior and review criteria are recorded in [`docs/DESIGN.md`](d
 
 For a one-time calibration pass, `--trace-once SECONDS` captures the existing feature values from live system audio and then exits; it neither records PCM nor alters normal startup. It writes a temporary JSON trace to `/tmp/lavatune-trace.json` by default, which can be removed after review.
 
+For motion tuning, `--motion-analysis SECONDS` runs the production mapper and organism physics against live system audio without entering the TUI. It writes only derived motion telemetry—speed, acceleration, travel, float/chop cues, deformation, spikes, and afterglow—to `/tmp/lavatune-motion.json` by default, and prints a compact summary. It never stores PCM:
+
+```bash
+lavatune --motion-analysis 30 --motion-output /tmp/lavatune-motion.json
+```
+
 The terminal-native TUI is the default presentation renderer. For an opt-in pixel companion view, add `--renderer canvas` (the older `--canvas` alias still works). It needs the local GTK 3/PyGObject runtime and reuses the exact same audio analysis, phrase state, and organism physics through one renderer-neutral presentation frame. It draws at native window resolution with four organisms and two fixed local surfaces each; it does not use GPU shaders or a full-screen scalar field. Canvas is experimental; terminal mode remains the portable product.
 
 If automatic source selection fails, inspect sources with `wpctl status` or `pactl list short sources`, then pass the source with `--source`.

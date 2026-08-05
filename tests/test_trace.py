@@ -8,6 +8,7 @@ from pathlib import Path
 from lavatune.audio import AudioFrame, CapturedAudioFrame
 from lavatune.config import AppConfig
 from lavatune.trace import TraceRecorder, capture_trace
+from lavatune.motion import MotionAnalyzer, capture_motion_analysis
 
 
 class FakeCapture:
@@ -81,6 +82,41 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(result.frames, 2)
         self.assertEqual(result.samples, 2)
         self.assertEqual(payload["format"], "lavatune-feature-trace-v1")
+        self.assertEqual(payload["captured_analysis_frames"], 2)
+
+
+class MotionAnalysisTests(unittest.TestCase):
+    def test_motion_analyzer_keeps_derived_body_telemetry_without_pcm(self) -> None:
+        analyzer = MotionAnalyzer(AppConfig())
+        analyzer.observe(AudioFrame(0.30, [0.12] * 8, 0.08, 0.10, 1.0))
+        analyzer.observe(AudioFrame(0.58, [0.72] * 8, 0.48, 0.22, 1.05))
+        payload = analyzer.payload()
+
+        self.assertEqual(payload["format"], "lavatune-motion-analysis-v1")
+        self.assertIn("summary", payload)
+        self.assertIn("bodies", payload["samples"][0])
+        self.assertIn("float_drive", payload["samples"][0]["bodies"][0])
+        self.assertIn("chop_drive", payload["samples"][0]["bodies"][0])
+        self.assertNotIn("pcm", payload)
+
+    def test_live_motion_analysis_stops_capture_and_writes_bounded_report(self) -> None:
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "motion.json"
+            result = capture_motion_analysis(
+                AppConfig(),
+                0.01,
+                output,
+                capture_factory=FakeCapture,
+                clock=clock,
+                sleeper=clock.sleep,
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(result.path, output)
+        self.assertEqual(result.frames, 2)
+        self.assertEqual(result.samples, 2)
+        self.assertIn("Motion analysis", result.summary)
         self.assertEqual(payload["captured_analysis_frames"], 2)
 
 
