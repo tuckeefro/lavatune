@@ -136,6 +136,14 @@ class AudioForceTests(unittest.TestCase):
         self.assertGreater(mapped["radio"].transient, mapped["podcast"].transient)
         self.assertGreater(mapped["podcast"].voice, mapped["music"].voice * 0.95)
         self.assertLess(mapped["microphone"].bass, mapped["podcast"].bass)
+        self.assertGreater(
+            behavior_for_context("music").stab_gain,
+            behavior_for_context("radio").stab_gain,
+        )
+        self.assertLess(
+            abs(mapped["music"].detail - mapped["radio"].detail),
+            0.10,
+        )
 
     def test_organisms_keep_independent_rotational_momentum(self) -> None:
         organism = AcousticOrganism(body_limit=4)
@@ -788,6 +796,24 @@ class CompositionTests(unittest.TestCase):
         self.assertGreater(fast.float_drive, slow.float_drive * 5.0)
         self.assertGreater(scream.chop_drive, 0.80)
         self.assertLess(slow.chop_drive, 0.05)
+
+    def test_music_stabs_are_separate_from_radio_motion(self) -> None:
+        strike = AudioForces(transient=0.70, pulse=0.62, rhythm_impulse=0.54)
+        music = motion_cues(
+            strike,
+            0.0,
+            0.0,
+            behavior_for_context("music").stab_gain,
+        )
+        radio = motion_cues(
+            strike,
+            0.0,
+            0.0,
+            behavior_for_context("radio").stab_gain,
+        )
+
+        self.assertGreater(music.stab_drive, 0.30)
+        self.assertEqual(radio.stab_drive, 0.0)
 
     def test_lavalamp_slows_planar_action_without_suppressing_inner_response(self) -> None:
         config = LavaConfig(blobs=4, drift=0.22, viscosity=0.95)

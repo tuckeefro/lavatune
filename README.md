@@ -110,7 +110,7 @@ The subjective behavior and review criteria are recorded in [`docs/DESIGN.md`](d
 
 For a one-time calibration pass, `--trace-once SECONDS` captures the existing feature values from live system audio and then exits; it neither records PCM nor alters normal startup. It writes a temporary JSON trace to `/tmp/lavatune-trace.json` by default, which can be removed after review.
 
-For motion tuning, `--motion-analysis SECONDS` runs the production mapper and organism physics against live system audio without entering the TUI. It writes only derived motion telemetry—speed, acceleration, travel, float/chop cues, deformation, spikes, and afterglow—to `/tmp/lavatune-motion.json` by default, and prints a compact summary. It never stores PCM:
+For motion tuning, `--motion-analysis SECONDS` runs the production mapper and organism physics against live system audio without entering the TUI. It writes only derived motion telemetry—speed, acceleration, travel, float/chop/stab cues, deformation, spikes, and afterglow—to `/tmp/lavatune-motion.json` by default, and prints a compact summary. Music uses the stab cue for short local impacts; radio keeps the shared drift envelope without that extra impulse. It never stores PCM:
 
 ```bash
 lavatune --motion-analysis 30 --motion-output /tmp/lavatune-motion.json

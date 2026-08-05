@@ -97,7 +97,18 @@ class MotionAnalyzer:
         bodies: list[dict[str, object]] = []
         speeds: list[float] = []
         accelerations: list[float] = []
-        for index, body in enumerate(self.field.bodies[: self.field.composition.active_bodies]):
+        active_bodies = self.field.bodies[: self.field.composition.active_bodies]
+        impact_target = (
+            min(
+                range(len(active_bodies)),
+                key=lambda index: abs(
+                    active_bodies[index].band / 7.0 - self.field.render_forces.tone
+                ),
+            )
+            if active_bodies
+            else 0
+        )
+        for index, body in enumerate(active_bodies):
             self._starts.setdefault(index, (body.x, body.y))
             previous_vx, previous_vy = self._previous_velocity.get(index, (body.vx, body.vy))
             speed = math.hypot(body.vx, body.vy)
@@ -106,7 +117,13 @@ class MotionAnalyzer:
                 (body.vy - previous_vy) / sample_dt,
             )
             start_x, start_y = self._starts[index]
-            cues = motion_cues(self.field.render_forces, self.field.phase, body.phase)
+            cues = motion_cues(
+                self.field.render_forces,
+                self.field.phase,
+                body.phase,
+                self.behavior.stab_gain,
+            )
+            stab_event = cues.stab_drive if index == impact_target else 0.0
             speeds.append(speed)
             accelerations.append(acceleration)
             self._previous_velocity[index] = (body.vx, body.vy)
@@ -123,6 +140,7 @@ class MotionAnalyzer:
                     "float_drive": round(cues.float_drive, 4),
                     "chop_drive": round(cues.chop_drive, 4),
                     "chop_signed": round(cues.chop_wave * cues.chop_drive, 4),
+                    "stab_drive": round(stab_event, 4),
                     "stretch": round(abs(body.stretch_x - 1.0) + abs(body.stretch_y - 1.0), 5),
                     "radius": round(body.radius, 5),
                     "spike": round(body.spike, 4),
@@ -146,6 +164,7 @@ class MotionAnalyzer:
                     "max_acceleration": round(max(accelerations, default=0.0), 5),
                     "max_float": round(max((body["float_drive"] for body in bodies), default=0.0), 4),
                     "max_chop": round(max((body["chop_drive"] for body in bodies), default=0.0), 4),
+                    "max_stab": round(max((body["stab_drive"] for body in bodies), default=0.0), 4),
                     "max_spike": round(max((body["spike"] for body in bodies), default=0.0), 4),
                 },
                 "bodies": bodies,
@@ -181,6 +200,7 @@ class MotionAnalyzer:
                 ),
                 "peak_float": round(max(float(group["max_float"]) for group in groups), 4),
                 "peak_chop": round(max(float(group["max_chop"]) for group in groups), 4),
+                "peak_stab": round(max(float(group["max_stab"]) for group in groups), 4),
                 "peak_spike": round(max(float(group["max_spike"]) for group in groups), 4),
                 "peak_body_travel": round(
                     max(float(body["travel"]) for body in body_records), 5
@@ -196,6 +216,7 @@ class MotionAnalyzer:
             f"peak accel {summary.get('peak_acceleration', 0.0):.4f} | "
             f"float {summary.get('peak_float', 0.0):.3f} | "
             f"chop {summary.get('peak_chop', 0.0):.3f} | "
+            f"stab {summary.get('peak_stab', 0.0):.3f} | "
             f"spike {summary.get('peak_spike', 0.0):.3f} | "
             f"travel {summary.get('peak_body_travel', 0.0):.4f}"
         )

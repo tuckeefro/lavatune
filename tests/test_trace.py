@@ -97,6 +97,7 @@ class MotionAnalysisTests(unittest.TestCase):
         self.assertIn("bodies", payload["samples"][0])
         self.assertIn("float_drive", payload["samples"][0]["bodies"][0])
         self.assertIn("chop_drive", payload["samples"][0]["bodies"][0])
+        self.assertIn("stab_drive", payload["samples"][0]["bodies"][0])
         self.assertNotIn("pcm", payload)
 
     def test_live_motion_analysis_stops_capture_and_writes_bounded_report(self) -> None:

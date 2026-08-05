@@ -311,10 +311,16 @@ class MotionCues:
     float_drive: float = 0.0
     chop_drive: float = 0.0
     chop_wave: float = 0.0
+    stab_drive: float = 0.0
     surge_drive: float = 0.0
 
 
-def motion_cues(forces: AudioForces, phase: float, body_phase: float) -> MotionCues:
+def motion_cues(
+    forces: AudioForces,
+    phase: float,
+    body_phase: float,
+    stab_gain: float = 0.0,
+) -> MotionCues:
     """Derive slow and staccato movement intentions from already-mapped forces."""
 
     float_drive = clamp(forces.tempo * (0.42 + forces.energy * 0.58))
@@ -328,10 +334,19 @@ def motion_cues(forces: AudioForces, phase: float, body_phase: float) -> MotionC
     chop_phase = phase * (
         7.0 + forces.tone * 5.0 + forces.rhythm_density * 6.0
     ) + body_phase * 1.7
+    stab_drive = clamp(
+        (
+            max(0.0, forces.transient - 0.10) * 1.55
+            + forces.rhythm_impulse * 0.28
+            + forces.pulse * 0.08
+        )
+        * max(0.0, stab_gain)
+    )
     return MotionCues(
         float_drive=float_drive,
         chop_drive=chop_drive,
         chop_wave=math.sin(chop_phase),
+        stab_drive=stab_drive,
         surge_drive=clamp(
             forces.bass * 0.78
             + forces.pulse * 0.16
@@ -379,12 +394,15 @@ class BehaviorProfile:
     rhythm_gain: float
     flux_gain: float
     pressure_wave_gain: float
+    stab_gain: float = 0.0
 
 
 LISTENING_BEHAVIORS: dict[str, BehaviorProfile] = {
     "podcast": BehaviorProfile("podcast", 2, 0.35, 1.00, 0.55, 0.14, 0.08, 0.05, 0.45, 0.0),
-    "radio": BehaviorProfile("radio", 3, 0.48, 0.62, 0.42, 0.22, 0.32, 0.20, 0.32, 0.22),
-    "music": BehaviorProfile("music", 4, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00, 1.00),
+    # Radio and music share nearly the same continuous motion envelope. Radio
+    # keeps its speaker/listener cast, while music alone gets local stabs.
+    "radio": BehaviorProfile("radio", 3, 0.58, 0.66, 0.52, 0.30, 0.44, 0.28, 0.48, 0.24, 0.0),
+    "music": BehaviorProfile("music", 4, 0.66, 0.70, 0.60, 0.40, 0.52, 0.36, 0.58, 0.30, 0.86),
     "microphone": BehaviorProfile("microphone", 1, 0.08, 1.00, 0.34, 0.10, 0.05, 0.04, 0.24, 0.0),
 }
 
@@ -1203,10 +1221,16 @@ class AcousticOrganism:
             rhythm_phase = self.phase * (6.0 + forces.rhythm_density * 10.0) + body.phase * 1.7
             rhythm_wave = math.sin(rhythm_phase)
             cues = (
-                motion_cues(forces, self.phase, body.phase)
+                motion_cues(
+                    forces,
+                    self.phase,
+                    body.phase,
+                    behavior.stab_gain if behavior is not None else 0.0,
+                )
                 if motion.vocabulary_gain > 0.0
                 else MotionCues()
             )
+            stab_event = cues.stab_drive if index == impact_target else 0.0
             float_lift = 1.0 + cues.float_drive * (
                 0.44 + body.character.idle * 0.22
             )
@@ -1265,6 +1289,8 @@ class AcousticOrganism:
                 * (0.014 + forces.tempo * 0.006)
                 * body_scale
             )
+            stab_angle = body.impact_angle + body.phase * 0.37 + self.phase * 0.19
+            stab_force = stab_event * (0.024 + forces.tone * 0.010) * body_scale
 
             wave_x = 0.0
             wave_y = 0.0
@@ -1329,6 +1355,7 @@ class AcousticOrganism:
                 + role_open_x
                 + speech_pull_x
                 + math.cos(chop_angle) * chop_force
+                + math.cos(stab_angle) * stab_force
             ) * motion.planar_gain
             planar_force_y = (
                 curl_y * acceleration * self.composition.vertical_flow
@@ -1365,6 +1392,7 @@ class AcousticOrganism:
                 * max(body.character.voice, body.character.detail * 0.62)
                 * 0.010
                 + math.sin(chop_angle) * chop_force
+                + math.sin(stab_angle) * stab_force
             ) * motion.planar_gain
             if motion.planar_smoothing > 0.0:
                 smoothing = 1.0 - math.exp(-motion.planar_smoothing * dt)
