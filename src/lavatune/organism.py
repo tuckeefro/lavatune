@@ -367,9 +367,9 @@ MOTION_PROFILES: dict[str, MotionProfile] = {
         "lavalamp",
         0.72,
         0.36,
-        0.48,
+        0.56,
         0.24,
-        0.38,
+        0.30,
         0.78,
         planar_gain=0.58,
         travel_limit=0.44,
@@ -1286,7 +1286,7 @@ class AcousticOrganism:
             chop_force = (
                 cues.chop_wave
                 * cues.chop_drive
-                * (0.014 + forces.tempo * 0.006)
+                * (0.009 + forces.tempo * 0.004)
                 * body_scale
             )
             stab_angle = body.impact_angle + body.phase * 0.37 + self.phase * 0.19
