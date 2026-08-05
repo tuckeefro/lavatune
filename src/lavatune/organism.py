@@ -300,6 +300,7 @@ class MotionProfile:
     planar_gain: float = 1.0
     travel_limit: float = 1.0
     orientation_gain: float = 1.0
+    planar_smoothing: float = 0.0
 
 
 MOTION_PROFILES: dict[str, MotionProfile] = {
@@ -321,6 +322,7 @@ MOTION_PROFILES: dict[str, MotionProfile] = {
         planar_gain=0.58,
         travel_limit=0.44,
         orientation_gain=0.72,
+        planar_smoothing=3.4,
     ),
 }
 
@@ -459,6 +461,8 @@ class Body:
     thermal_active: bool = False
     flow_memory_x: float = 0.0
     flow_memory_y: float = 0.0
+    planar_force_x: float = 0.0
+    planar_force_y: float = 0.0
     pressure_memory: float = 0.0
     speech_flow: float = 0.0
     speech_pulse: float = 0.0
@@ -1238,7 +1242,7 @@ class AcousticOrganism:
                 + tempo_drive * 0.010
                 + rhythm_drive * 0.009
             )
-            body.vx += (
+            planar_force_x = (
                 curl_x * acceleration * self.composition.horizontal_flow
                 + outward_x * bass_push * 0.110 * body_scale
                 + voice_swirl_x * 0.125
@@ -1266,8 +1270,8 @@ class AcousticOrganism:
                 + role_pull_x
                 + role_open_x
                 + speech_pull_x
-            ) * motion.planar_gain * dt
-            body.vy += (
+            ) * motion.planar_gain
+            planar_force_y = (
                 curl_y * acceleration * self.composition.vertical_flow
                 + thermal_flow
                 + thermal_lift
@@ -1301,7 +1305,20 @@ class AcousticOrganism:
                 - affect.yearning
                 * max(body.character.voice, body.character.detail * 0.62)
                 * 0.010
-            ) * motion.planar_gain * dt
+            ) * motion.planar_gain
+            if motion.planar_smoothing > 0.0:
+                smoothing = 1.0 - math.exp(-motion.planar_smoothing * dt)
+                body.planar_force_x = lerp(
+                    body.planar_force_x, planar_force_x, smoothing
+                )
+                body.planar_force_y = lerp(
+                    body.planar_force_y, planar_force_y, smoothing
+                )
+            else:
+                body.planar_force_x = planar_force_x
+                body.planar_force_y = planar_force_y
+            body.vx += body.planar_force_x * dt
+            body.vy += body.planar_force_y * dt
 
             thermal_drag = (
                 max(0.0, body.thermal_viscosity - 0.62) * 1.15
@@ -1455,22 +1472,26 @@ class AcousticOrganism:
                 wall_pressure_x = clamp((margin_x - body.x) / max(0.02, margin_x))
                 body.x = margin_x
                 body.vx = abs(body.vx) * (0.16 + motion.collision * 0.18)
+                body.planar_force_x = max(0.0, body.planar_force_x)
             elif body.x > 1.0 - margin_x:
                 wall_pressure_x = clamp(
                     (body.x - (1.0 - margin_x)) / max(0.02, margin_x)
                 )
                 body.x = 1.0 - margin_x
                 body.vx = -abs(body.vx) * (0.16 + motion.collision * 0.18)
+                body.planar_force_x = min(0.0, body.planar_force_x)
             if body.y < margin_y:
                 wall_pressure_y = clamp((margin_y - body.y) / max(0.02, margin_y))
                 body.y = margin_y
                 body.vy = abs(body.vy) * (0.14 + motion.collision * 0.16)
+                body.planar_force_y = max(0.0, body.planar_force_y)
             elif body.y > 1.0 - margin_y:
                 wall_pressure_y = clamp(
                     (body.y - (1.0 - margin_y)) / max(0.02, margin_y)
                 )
                 body.y = 1.0 - margin_y
                 body.vy = -abs(body.vy) * (0.14 + motion.collision * 0.16)
+                body.planar_force_y = min(0.0, body.planar_force_y)
 
             body.wall_pressure_x = max(
                 body.wall_pressure_x * math.exp(-4.0 * dt), wall_pressure_x

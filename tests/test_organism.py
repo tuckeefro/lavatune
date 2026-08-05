@@ -818,6 +818,24 @@ class CompositionTests(unittest.TestCase):
         self.assertLess(MOTION_PROFILES["lavalamp"].planar_gain, 0.70)
         self.assertGreater(MOTION_PROFILES["lavalamp"].surface_motion, 0.70)
 
+    def test_lavalamp_planar_force_eases_into_a_new_direction(self) -> None:
+        organism = AcousticOrganism(body_limit=4)
+        organism.seed_for_tile(44, 18, 4)
+        config = LavaConfig(blobs=4, drift=0.22, viscosity=0.95)
+        strong = AudioForces(bass=0.82, energy=0.76, tempo=0.68, detail=0.54)
+
+        organism.update(1.0 / 22.0, strong, 44, 18, config, "lavalamp")
+        body = organism.bodies[0]
+        previous_force = (body.planar_force_x, body.planar_force_y)
+        organism.update(1.0 / 22.0, AudioForces(), 44, 18, config, "lavalamp")
+
+        current_force = (body.planar_force_x, body.planar_force_y)
+        self.assertGreater(math.hypot(*current_force), 0.0)
+        self.assertLess(
+            math.dist(previous_force, current_force),
+            math.hypot(*previous_force) * 0.45,
+        )
+
     def test_volume_scars_persist_until_a_new_stable_pattern_earns_recovery(self) -> None:
         config = LavaConfig(blobs=4)
         organism = AcousticOrganism(body_limit=4)
