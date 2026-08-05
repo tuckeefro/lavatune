@@ -111,7 +111,10 @@ def compose_tile(width: int, height: int, requested_bodies: int) -> TileComposit
     visual_aspect = width / max(1.0, height * 1.85)
 
     if area < 320:
-        count, radius_scale, size = 1, 1.34, "micro"
+        # Keep a small requested cast readable instead of collapsing it to one
+        # metaball. Smaller bodies preserve identity better than one oversized
+        # center mass when the tile is constrained.
+        count, radius_scale, size = 3, 0.98, "micro"
     elif area < 760:
         count, radius_scale, size = 3, 1.10, "small"
     elif area < 1500:
@@ -119,7 +122,7 @@ def compose_tile(width: int, height: int, requested_bodies: int) -> TileComposit
     else:
         count, radius_scale, size = 6, 0.90, "large"
 
-    if count == 1:
+    if size == "micro":
         habitat = "micro"
         vertical_flow, horizontal_flow = 0.92, 0.92
     elif visual_aspect < 0.78:
@@ -145,7 +148,11 @@ def compose_tile(width: int, height: int, requested_bodies: int) -> TileComposit
 
 
 _HABITAT_ANCHORS: dict[str, tuple[tuple[float, float], ...]] = {
-    "micro": ((0.50, 0.54),),
+    "micro": (
+        (0.34, 0.62),
+        (0.58, 0.40),
+        (0.70, 0.68),
+    ),
     "chimney": (
         (0.47, 0.74),
         (0.54, 0.46),
@@ -1780,9 +1787,9 @@ class OrganismFieldRenderer:
                     influence = (
                         body.presence * depth_luminance / ((1.0 + dist2) ** 2.65)
                     )
-                    # A soft union lets touching bodies merge at their skirts
-                    # without turning several bodies into one saturated slab.
-                    mass = max(mass, influence) + min(mass, influence) * 0.22
+                    # A soft union lets touching bodies share skirts while the
+                    # lower blend keeps their readable cores separate.
+                    mass = max(mass, influence) + min(mass, influence) * 0.10
 
                     surface = max(0.0, 1.0 - abs(math.sqrt(dist2) - 0.92) * 3.6)
                     texture = 0.5 + 0.5 * math.sin(

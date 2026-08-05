@@ -1272,7 +1272,7 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual([body.spike for body in rapid.bodies[:4]], [0.0] * 4)
 
     def test_tile_composition_changes_topology_instead_of_only_scale(self) -> None:
-        self.assertEqual(compose_tile(24, 10, 8).active_bodies, 1)
+        self.assertEqual(compose_tile(24, 10, 8).active_bodies, 3)
         self.assertEqual(compose_tile(30, 24, 8).active_bodies, 3)
         self.assertEqual(compose_tile(44, 18, 8).active_bodies, 4)
         self.assertEqual(compose_tile(72, 32, 8).active_bodies, 6)
@@ -1326,7 +1326,7 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertEqual(field.composition.active_bodies, 4)
         settle(field, SILENCE, "book", 1)
-        self.assertEqual(field.composition.active_bodies, 1)
+        self.assertEqual(field.composition.active_bodies, 3)
         self.assertEqual([item[0] for item in before], [id(body) for body in field.bodies])
 
     def test_mass_weighted_group_recenters_without_collapsing_body_spacing(self) -> None:
@@ -1414,7 +1414,7 @@ class CompositionTests(unittest.TestCase):
         field = LavaField()
         field.resize(18, 8)
 
-        center_x, center_y = field.organism.center_of_mass(1)
+        center_x, center_y = field.organism.center_of_mass(3)
 
         self.assertAlmostEqual(center_x, 0.5, places=2)
         self.assertAlmostEqual(center_y, 0.52, places=2)
