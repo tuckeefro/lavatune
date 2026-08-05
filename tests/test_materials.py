@@ -327,6 +327,26 @@ class MaterialTests(unittest.TestCase):
         self.assertGreater(changed, 10)
         self.assertLess(music_area, quiet_area * 1.35)
 
+    def test_contour_fluid_expands_and_contracts_with_shape_pulse(self) -> None:
+        organism = AcousticOrganism(body_limit=1)
+        body = organism.bodies[0]
+        body.x = 0.5
+        body.y = 0.5
+        body.radius = 0.18
+        body.presence = 1.0
+
+        quiet = FLUID_MATERIAL.render(
+            [body], AudioForces(), 60, 18, MaterialStyle(), 0.0, 1.85
+        )
+        body.shape_pulse = 0.92
+        expanded = FLUID_MATERIAL.render(
+            [body], AudioForces(), 60, 18, MaterialStyle(), 0.0, 1.85
+        )
+
+        quiet_area = sum(cell.glyph != " " for row in quiet for cell in row)
+        expanded_area = sum(cell.glyph != " " for row in expanded for cell in row)
+        self.assertGreater(expanded_area, quiet_area)
+
     def test_contour_depth_projects_near_bodies_larger_and_brighter(self) -> None:
         organism = AcousticOrganism(body_limit=1)
         body = organism.bodies[0]

@@ -1564,7 +1564,11 @@ class AcousticOrganism:
                 + affect.snap * 0.060
                 + story.interruption * 0.030
                 + story.resolution * 0.025
-                + body.shape_pulse * (0.105 + body.character.deformation * 0.045)
+                + body.shape_pulse * (0.16 + body.character.deformation * 0.08)
+                + motion.idle_flow
+                * (0.010 + cues.float_drive * 0.026)
+                * (1.0 - forces.transient * 0.42)
+                * math.sin(self.phase * 0.54 + body.phase * 0.67)
             )
             if embody_posture:
                 # Heat makes wax yield gradually. Keep attacks as brief
@@ -1579,7 +1583,7 @@ class AcousticOrganism:
                 )
             elif speaking:
                 target_radius *= 1.0 + body.speech_flow * 0.055 + body.speech_pulse * 0.022
-            radius_attack = 1.6 + body.shape_pulse * 2.0
+            radius_attack = 1.6 + body.shape_pulse * 2.6
             body.base_radius = lerp(body.base_radius, target_radius, dt * radius_attack)
             body.radius = lerp(body.radius, body.base_radius, dt * (3.4 + body.shape_pulse * 1.2))
 
@@ -1677,17 +1681,19 @@ class AcousticOrganism:
             quiet_flow = (
                 motion.idle_flow
                 * body.character.deformation
-                * (0.010 + cues.float_drive * 0.018)
+                * (0.014 + cues.float_drive * 0.030)
                 * (1.0 - forces.transient * 0.42)
             )
             flow_phase = self.phase * (0.46 + forces.tempo * 0.24) + body.phase * 0.73
             flow_wave = math.sin(flow_phase)
-            body.stretch_x += quiet_flow * (0.72 + flow_wave * 0.28)
-            body.stretch_y += quiet_flow * (0.54 - flow_wave * 0.18)
+            # Quiet material breathes around its neutral shape. The audio can
+            # still change the contour while the center remains in slow flow.
+            body.stretch_x += quiet_flow * flow_wave
+            body.stretch_y += quiet_flow * flow_wave * 0.72
             pulse_axis_x = 0.58 + 0.42 * abs(math.cos(body.impact_angle))
             pulse_axis_y = 0.58 + 0.42 * abs(math.sin(body.impact_angle))
-            body.stretch_x += shape_event * 0.14 * pulse_axis_x
-            body.stretch_y += shape_event * 0.14 * pulse_axis_y
+            body.stretch_x += shape_event * 0.25 * pulse_axis_x
+            body.stretch_y += shape_event * 0.25 * pulse_axis_y
             chop_shape = (
                 cues.chop_wave * cues.chop_drive * 0.065 * body.character.deformation
             )
@@ -1798,6 +1804,27 @@ class OrganismFieldRenderer:
         axis_x, axis_y = tile_axis_scales(width, height, cell_aspect)
         camera_x = math.sin(phase * 0.19) * 0.018
         camera_y = math.cos(phase * 0.15) * 0.012
+        blend_gains = [0.10] * len(bodies)
+        visible = [
+            (index, body)
+            for index, body in enumerate(bodies)
+            if body.presence >= 0.01
+        ]
+        for left_index, left in visible:
+            for right_index, right in visible:
+                if left_index >= right_index:
+                    continue
+                distance = math.hypot(
+                    (left.x - right.x) / max(0.001, axis_x),
+                    (left.y - right.y) / max(0.001, axis_y),
+                )
+                reach = max(0.08, (left.radius + right.radius) * 1.85)
+                proximity = clamp(1.0 - distance / reach)
+                if proximity <= 0.0:
+                    continue
+                blend = 0.10 + proximity * 0.20
+                blend_gains[left_index] = max(blend_gains[left_index], blend)
+                blend_gains[right_index] = max(blend_gains[right_index], blend)
 
         for y in range(height):
             ny = y / max(1, height - 1)
@@ -1827,7 +1854,7 @@ class OrganismFieldRenderer:
                     )
                     # A soft union lets touching bodies share skirts while the
                     # lower blend keeps their readable cores separate.
-                    mass = max(mass, influence) + min(mass, influence) * 0.10
+                    mass = max(mass, influence) + min(mass, influence) * blend_gains[index]
 
                     surface = max(0.0, 1.0 - abs(math.sqrt(dist2) - 0.92) * 3.6)
                     texture = 0.5 + 0.5 * math.sin(

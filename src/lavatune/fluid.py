@@ -246,6 +246,7 @@ class FluidMaterial:
                 round(body.presence * 8),
                 round(body.afterglow * 8),
                 round(body.spike * 12),
+                round(body.shape_pulse * 12),
                 round(body.impact_angle * 6),
                 round(body.surface_ripple * 12),
                 round(body.surface_ripple_angle * 6),
@@ -318,7 +319,12 @@ class FluidMaterial:
             local_hit = forces.hits[body.band % len(forces.hits)] if forces.hits else 0.0
             band_position = body.band / max(1, len(forces.bands) - 1)
             pitch_affinity = max(0.16, 1.0 - abs(band_position - forces.tone) * 1.7)
-            breath = 1.0 + forces.bass * body.character.bass * 0.055 + local_band * 0.025
+            breath = (
+                1.0
+                + forces.bass * body.character.bass * 0.055
+                + local_band * 0.025
+                + body.shape_pulse * (0.16 + body.character.deformation * 0.08)
+            )
             radius_x = (
                 radius
                 * axis_x
@@ -621,7 +627,7 @@ def _merge_intervals(intervals: list[tuple[float, float]]) -> list[tuple[float, 
         return []
     merged: list[tuple[float, float]] = []
     for left, right in sorted(intervals):
-        if not merged or left > merged[-1][1] + 0.35:
+        if not merged or left > merged[-1][1] + 0.70:
             merged.append((left, right))
             continue
         merged[-1] = (merged[-1][0], max(merged[-1][1], right))

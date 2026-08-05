@@ -100,8 +100,11 @@ class VolumeMaterial:
             # The core is the organism's persistent mass. It may breathe a
             # little through its own physics, but loudness alone cannot turn
             # it into a different blob; sharp events get their own lobe.
-            core_stretch_x = clamp(body.stretch_x, 0.92, 1.08)
-            core_stretch_y = clamp(body.stretch_y, 0.92, 1.08)
+            core_stretch_x = clamp(body.stretch_x, 0.84, 1.18)
+            core_stretch_y = clamp(body.stretch_y, 0.84, 1.18)
+            shape_breath = 1.0 + body.shape_pulse * (
+                0.16 + body.character.deformation * 0.08
+            )
             squeeze = 0.78 + abs(math.cos(body.yaw)) * 0.22
             a = (
                 radius
@@ -109,6 +112,7 @@ class VolumeMaterial:
                 * core_stretch_x
                 * depth_scale
                 * squeeze
+                * shape_breath
                 * body.character.volume_width
             )
             b = (
@@ -116,6 +120,7 @@ class VolumeMaterial:
                 * axis_y
                 * core_stretch_y
                 * depth_scale
+                * shape_breath
                 * body.character.volume_height
             )
             center_x = body.x * max(1, width - 1)
