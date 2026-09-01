@@ -526,10 +526,15 @@ class AudioForceMapper:
 
         previous_bass = self._bass
         previous_energy = self._energy
-        self._bass = lerp(self._bass, low, time_amount(0.24, dt))
-        self._voice = lerp(self._voice, voice, time_amount(0.20, dt))
-        self._detail = lerp(self._detail, detail, time_amount(0.16, dt))
-        self._energy = lerp(self._energy, energy, time_amount(0.18, dt))
+        bass_rate = 0.55 if low > self._bass else 0.18
+        voice_rate = 0.45 if voice > self._voice else 0.16
+        detail_rate = 0.50 if detail > self._detail else 0.14
+        energy_rate = 0.50 if energy > self._energy else 0.15
+
+        self._bass = lerp(self._bass, low, time_amount(bass_rate, dt))
+        self._voice = lerp(self._voice, voice, time_amount(voice_rate, dt))
+        self._detail = lerp(self._detail, detail, time_amount(detail_rate, dt))
+        self._energy = lerp(self._energy, energy, time_amount(energy_rate, dt))
 
         attack = clamp(frame.attack)
         bass_rise = max(0.0, self._bass - previous_bass)

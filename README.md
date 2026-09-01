@@ -4,7 +4,7 @@
 
 > **Naming note:** Lavatune is the project's working codename. The Python package and command keep that name during the alpha period so the implementation can stabilize before the public product name is chosen.
 
-Lavatune is a local-first, terminal-native acoustic organism for Linux. It occupies a small terminal tile, keeps recognizable floating bodies alive during silence, and turns system audio into buoyant motion, deformation, wall pressure, and brief afterglow.
+Lavatune is a local-first, terminal-native acoustic organism for Linux and macOS. It occupies a small terminal tile, keeps recognizable floating bodies alive during silence, and turns system audio into buoyant motion, deformation, wall pressure, and brief afterglow.
 
 It is designed as a quiet desktop companion rather than a bar equalizer: sound changes the organism's behavior without mapping every sample to a block or flash.
 
@@ -31,10 +31,10 @@ The current implementation targets Linux. A lightweight native macOS sibling is 
 
 ## Requirements
 
-- Linux
+- Linux or macOS (Apple Silicon / Intel)
 - Python 3.11 or newer
 - a terminal with color and `curses` support
-- one audio capture program: `pw-cat`, `parec`, or `ffmpeg`
+- one audio capture program: `pw-cat`, `parec`, `ffmpeg`, or `rec` (sox)
 - optionally, `playerctl` for media titles
 
 Common package names include `pipewire-bin` and `pulseaudio-utils` on Debian/Ubuntu, `pipewire-utils` on Fedora, and `pipewire` on Arch Linux. Package names vary by distribution.
@@ -87,7 +87,18 @@ lavatune --list-themes
 
 ## Controls
 
-The organism starts without configuration on screen. Press `Tab` to bring the control dock in or send it backstage again, and `q` to quit. Mouse clicks, the mouse wheel, and arrow keys adjust the selected control while the dock is open.
+The organism starts without configuration on screen. Press `Tab` to bring the control dock in or send it backstage again, `?` for a controls/help overlay, and `q` to quit.
+
+Quick keyboard controls while running:
+- `1`..`4`: Presets (`1`: calm, `2`: balanced, `3`: reactive, `4`: chaos)
+- `g`/`G`: Gain / reactivity (+/-)
+- `r`/`R`: Reactivity (+/-)
+- `s`/`S`: Smoothing / viscosity (+/-)
+- `m`/`M`: Autonomous motion speed (+/-)
+- `d`/`D`: Visual density / complexity (+/-)
+- `f`/`F`: FPS cap (12, 20, 30, 45, 60)
+- `p`/`P`: Cycle color palette
+- `?`: Toggle help overlay
 
 The dock has one daily choice: `Listening`. Choose `Podcast`, `Radio`, `Music`, or `Microphone`; it selects how the same acoustic facts become physical behavior. Podcast, Radio, and Music use system output. Microphone uses the local default input, shows an active capture state, and does not poll media metadata. Backend, source override, FPS, and diagnostic options remain available through configuration and the doctor command.
 

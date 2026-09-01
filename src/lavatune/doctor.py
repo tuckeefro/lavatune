@@ -141,13 +141,14 @@ def inspect_environment(
     capture_factory: Callable[..., AudioCapture] = AudioCapture,
 ) -> DoctorReport:
     checks: list[DoctorCheck] = []
-    linux = platform.system() == "Linux"
+    current_os = platform.system()
+    supported_os = current_os in {"Linux", "Darwin"}
     checks.append(
         DoctorCheck(
             "platform",
-            "ok" if linux else "error",
-            f"{platform.system()} {platform.machine()}".strip(),
-            "Lavatune currently supports Linux only." if not linux else "",
+            "ok" if supported_os else "error",
+            f"{current_os} {platform.machine()}".strip(),
+            "Lavatune supports Linux and macOS." if not supported_os else "",
         )
     )
 
@@ -184,7 +185,7 @@ def inspect_environment(
         )
     )
 
-    if probe_audio and selected_backend is not None and linux:
+    if probe_audio and selected_backend is not None and supported_os:
         checks.append(
             _probe_audio(
                 config,
@@ -197,8 +198,8 @@ def inspect_environment(
             DoctorCheck(
                 "audio frames",
                 "skip",
-                "audio probe is Linux-only in this release",
-                "Use --demo or wait for the 0.2.0 macOS native track.",
+                f"audio probe is not supported on {current_os}",
+                "Use --demo or run on Linux/macOS.",
             )
         )
     elif not probe_audio:

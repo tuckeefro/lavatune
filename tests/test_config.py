@@ -121,6 +121,32 @@ class ConfigTests(unittest.TestCase):
 
             self.assertFalse(destination.exists())
 
+    def test_key_controls_and_presets_apply_and_mark_dirty(self) -> None:
+        from lavatune.app import _apply_named_preset, _handle_key
+
+        config = load_config(None, None)
+        ui = UiState()
+        controls = _make_controls(config)
+
+        # Test preset 'calm'
+        _apply_named_preset(config, "calm")
+        self.assertEqual(config.fps, 20)
+        self.assertEqual(config.lava.reactivity, 0.6)
+
+        # Test key '1' (calm preset)
+        _handle_key(ord("1"), config, ui, controls)
+        self.assertTrue(ui.preferences_dirty)
+        self.assertIn("calm", ui.status)
+
+        # Test key '?' (help overlay)
+        _handle_key(ord("?"), config, ui, controls)
+        self.assertTrue(ui.help_overlay)
+
+        # Test key 'g' (gain/reactivity increase)
+        prev_reactivity = config.lava.reactivity
+        _handle_key(ord("g"), config, ui, controls)
+        self.assertGreater(config.lava.reactivity, prev_reactivity)
+
 
 if __name__ == "__main__":
     unittest.main()

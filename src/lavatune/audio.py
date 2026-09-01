@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import platform
 import shutil
 import struct
 import subprocess
@@ -20,6 +21,7 @@ CAPTURE_BINARIES: dict[str, str] = {
     "pipewire": "pw-cat",
     "pulse": "parec",
     "ffmpeg": "ffmpeg",
+    "sox": "rec",
 }
 
 
@@ -161,9 +163,17 @@ class AudioCapture:
                     f"'{CAPTURE_BINARIES[preferred]}' in PATH."
                 )
             return preferred
+        if platform.system() == "Darwin":
+            for backend in ("ffmpeg", "sox"):
+                if backend in CAPTURE_BINARIES and shutil.which(CAPTURE_BINARIES[backend]):
+                    return backend
         for backend, binary in CAPTURE_BINARIES.items():
             if shutil.which(binary):
                 return backend
+        if platform.system() == "Darwin":
+            raise RuntimeError(
+                "No supported audio capture backend found on macOS. Install ffmpeg (e.g. brew install ffmpeg) or sox."
+            )
         raise RuntimeError(
             "No supported audio capture backend found. Install pw-cat, parec, or ffmpeg."
         )
@@ -177,9 +187,13 @@ class AudioCapture:
         if self.backend == "pulse":
             return "@DEFAULT_SOURCE@" if microphone else "@DEFAULT_MONITOR@"
         if self.backend == "ffmpeg":
+            if platform.system() == "Darwin":
+                return ":default"
             if microphone:
                 return "default"
             return "@DEFAULT_MONITOR@"
+        if self.backend == "sox":
+            return "default"
         return None
 
     def _spawn_process(self) -> None:
@@ -254,13 +268,15 @@ class AudioCapture:
                 command.append(f"--device={self.source}")
             return command
         if self.backend == "ffmpeg":
-            source = self.source or "default"
+            is_darwin = platform.system() == "Darwin"
+            source = self.source or (":default" if is_darwin else "default")
+            format_input = "avfoundation" if is_darwin else "pulse"
             return [
                 "ffmpeg",
                 "-loglevel",
                 "error",
                 "-f",
-                "pulse",
+                format_input,
                 "-i",
                 source,
                 "-ac",
@@ -269,6 +285,22 @@ class AudioCapture:
                 rate,
                 "-f",
                 "s16le",
+                "-",
+            ]
+        if self.backend == "sox":
+            return [
+                "rec",
+                "-q",
+                "-c",
+                channels,
+                "-r",
+                rate,
+                "-b",
+                "16",
+                "-e",
+                "signed-integer",
+                "-t",
+                "raw",
                 "-",
             ]
         raise RuntimeError(f"Unsupported backend '{self.backend}'")
@@ -288,11 +320,19 @@ class AudioCapture:
                             self._stderr_thread.join(timeout=0.05)
                         stderr = self._backend_message()
                         detail = f" Backend message: {stderr}" if stderr else ""
+                        permission_hint = ""
+                        if platform.system() == "Darwin" and any(
+                            kw in stderr.lower() for kw in ("permission", "avfoundation", "denied", "not permitted")
+                        ):
+                            permission_hint = (
+                                " Note: Check terminal audio permissions in macOS System Settings > "
+                                "Privacy & Security > Microphone."
+                            )
                         self._error = (
                             f"Audio capture stopped for backend '{self.backend}' using "
                             f"source '{sanitize_display_text(str(self.source))}'. "
                             f"Try setting --source explicitly or "
-                            f"switching --backend.{detail}"
+                            f"switching --backend.{permission_hint}{detail}"
                         )
                     break
                 time.sleep(0.01)
