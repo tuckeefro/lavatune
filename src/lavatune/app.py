@@ -861,7 +861,6 @@ def _handle_terminal_sequence(key: int, ui: UiState) -> bool:
         return True
     if ui.escape_buffer == "\x1b[O":
         ui.escape_buffer = ""
-        ui.quit_requested = True
         return True
     if "\x1b[I".startswith(ui.escape_buffer) or "\x1b[O".startswith(ui.escape_buffer):
         return True
