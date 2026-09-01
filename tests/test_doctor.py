@@ -109,15 +109,15 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("no PCM arrived within 0.2s", format_report(report))
 
     @patch("lavatune.doctor._terminal_color_count", return_value=256)
-    @patch("lavatune.doctor.platform.system", return_value="Darwin")
+    @patch("lavatune.doctor.platform.system", return_value="Windows")
     @patch("lavatune.doctor.shutil.which")
-    def test_non_linux_environment_reports_linux_only_audio_probe(self, which, _system, _colors) -> None:
-        which.side_effect = lambda binary: f"/usr/bin/{binary}" if binary == "pw-cat" else None
+    def test_unsupported_environment_reports_skipped_audio_probe(self, which, _system, _colors) -> None:
+        which.side_effect = lambda binary: f"/usr/bin/{binary}" if binary == "ffmpeg" else None
         probe_used = {"called": False}
 
         def _never_called(_: object) -> object:
             probe_used["called"] = True
-            raise AssertionError("audio probe should be skipped on non-Linux platforms")
+            raise AssertionError("audio probe should be skipped on unsupported platforms")
 
         report = inspect_environment(
             load_config(None, None),
@@ -128,7 +128,7 @@ class DoctorTests(unittest.TestCase):
         self.assertFalse(probe_used["called"])
         self.assertEqual(report.errors, 1)
         self.assertEqual(report.checks[-1].status, "skip")
-        self.assertIn("audio probe is Linux-only in this release", format_report(report))
+        self.assertIn("audio probe is not supported on Windows", format_report(report))
 
 
 if __name__ == "__main__":

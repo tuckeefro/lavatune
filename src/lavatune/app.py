@@ -696,9 +696,32 @@ def _handle_mouse(
                 return
 
 
+PRESETS: dict[str, dict[str, object]] = {
+    "calm": {"fps": 20, "reactivity": 0.6, "drift": 0.15, "viscosity": 0.96, "blobs": 3},
+    "balanced": {"fps": 30, "reactivity": 1.0, "drift": 0.30, "viscosity": 0.92, "blobs": 4},
+    "reactive": {"fps": 30, "reactivity": 1.5, "drift": 0.45, "viscosity": 0.85, "blobs": 6},
+    "chaos": {"fps": 45, "reactivity": 2.0, "drift": 0.65, "viscosity": 0.75, "blobs": 8},
+}
+
+
+def _apply_named_preset(config: AppConfig, name: str) -> None:
+    if name not in PRESETS:
+        return
+    p = PRESETS[name]
+    config.fps = int(p["fps"])
+    config.lava.reactivity = float(p["reactivity"])
+    config.lava.drift = float(p["drift"])
+    config.lava.viscosity = float(p["viscosity"])
+    config.lava.blobs = int(p["blobs"])
+
+
 def _handle_key(key: int, config: AppConfig, ui: UiState, controls: dict[str, list[Control]]) -> None:
     if key in (ord("q"), ord("Q")):
         ui.quit_requested = True
+        return
+    if key == ord("?"):
+        ui.help_overlay = not ui.help_overlay
+        ui.set_status("help overlay " + ("shown" if ui.help_overlay else "hidden"))
         return
     if key == ord("\t"):
         ui.dock_open = not ui.dock_open
@@ -708,6 +731,77 @@ def _handle_key(key: int, config: AppConfig, ui: UiState, controls: dict[str, li
         ui.tab_index = (ui.tab_index - 1) % len(TAB_NAMES)
         ui.selected_row = 0
         ui.set_status(f"tab {TAB_NAMES[ui.tab_index].lower()}")
+        return
+
+    # Presets 1-4
+    if key in (ord("1"), ord("2"), ord("3"), ord("4")):
+        preset_names = ("calm", "balanced", "reactive", "chaos")
+        idx = key - ord("1")
+        name = preset_names[idx]
+        _apply_named_preset(config, name)
+        ui.set_status(f"preset: {name}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
+        return
+
+    # Sensitivity / gain or reactivity (g/G, r/R)
+    if key in (ord("g"), ord("G"), ord("r"), ord("R")):
+        delta = 0.15 if key in (ord("g"), ord("r")) else -0.15
+        config.lava.reactivity = _clamp(config.lava.reactivity + delta, 0.3, 3.0)
+        ui.set_status(f"reactivity: {config.lava.reactivity:.2f}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
+        return
+
+    # Smoothing / viscosity (s/S)
+    if key in (ord("s"), ord("S")):
+        delta = 0.02 if key == ord("s") else -0.02
+        config.lava.viscosity = _clamp(config.lava.viscosity + delta, 0.70, 0.98)
+        ui.set_status(f"smoothing: {config.lava.viscosity:.2f}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
+        return
+
+    # Autonomous motion speed / drift (m/M)
+    if key in (ord("m"), ord("M")):
+        delta = 0.05 if key == ord("m") else -0.05
+        config.lava.drift = _clamp(config.lava.drift + delta, 0.05, 0.85)
+        ui.set_status(f"motion speed: {config.lava.drift:.2f}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
+        return
+
+    # Visual density / complexity / blobs (d/D)
+    if key in (ord("d"), ord("D")):
+        delta = 1 if key == ord("d") else -1
+        config.lava.blobs = max(1, min(10, config.lava.blobs + delta))
+        ui.set_status(f"density: {config.lava.blobs}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
+        return
+
+    # FPS cap (f/F)
+    if key in (ord("f"), ord("F")):
+        fps_choices = (12, 20, 30, 45, 60)
+        curr = config.fps
+        idx = min(range(len(fps_choices)), key=lambda i: abs(fps_choices[i] - curr))
+        delta = 1 if key == ord("f") else -1
+        config.fps = fps_choices[(idx + delta) % len(fps_choices)]
+        ui.set_status(f"fps cap: {config.fps}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
+        return
+
+    # Palette cycle (p/P)
+    if key in (ord("p"), ord("P")):
+        palettes = list(PALETTES.keys())
+        curr = _palette_name(config.render.palette)
+        idx = palettes.index(curr) if curr in palettes else 0
+        delta = 1 if key == ord("p") else -1
+        config.render.palette = palettes[(idx + delta) % len(palettes)]
+        ui.set_status(f"palette: {config.render.palette}")
+        ui.preferences_dirty = True
+        ui.preferences_due_at = time.monotonic() + 0.35
         return
     if key == curses.KEY_RIGHT:
         if ui.dock_open:

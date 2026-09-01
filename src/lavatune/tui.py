@@ -109,6 +109,7 @@ class UiState:
     media: MediaInfo = field(default_factory=MediaInfo)
     preferences_dirty: bool = False
     preferences_due_at: float = 0.0
+    help_overlay: bool = False
 
     def set_status(self, message: str, *, ttl: float = 1.8) -> None:
         self.status = sanitize_display_text(message, max_chars=500)
@@ -363,6 +364,30 @@ def changed_sparse_runs(
     return runs
 
 
+def draw_help_overlay(win: curses.window) -> None:
+    height, width = win.getmaxyx()
+    lines = [
+        "--- Lavatune Controls & Presets ---",
+        "  1..4  : Presets (1: Calm, 2: Balanced, 3: Reactive, 4: Chaos)",
+        "  g/G   : Adjust gain / reactivity (+/-)",
+        "  r/R   : Adjust reactivity (+/-)",
+        "  s/S   : Adjust smoothing / decay (+/-)",
+        "  m/M   : Adjust autonomous motion speed (+/-)",
+        "  d/D   : Adjust visual density / complexity (+/-)",
+        "  f/F   : Adjust FPS cap (12, 20, 30, 45, 60)",
+        "  p/P   : Cycle color palette",
+        "  Tab   : Toggle control dock",
+        "  ?     : Toggle this help overlay",
+        "  q/Q   : Quit",
+    ]
+    start_y = max(0, (height - len(lines)) // 2)
+    start_x = max(0, (width - 60) // 2)
+    for idx, line in enumerate(lines):
+        if start_y + idx >= height:
+            break
+        safe_add(win, start_y + idx, start_x, line[: max(0, width - start_x)], curses.A_BOLD | curses.A_REVERSE)
+
+
 def draw_visual(
     win: curses.window,
     field: LavaField,
@@ -454,6 +479,11 @@ def draw_visual(
     field.metrics.changed_cells += changed_cells
     field.metrics.written_runs += written_runs
     field.metrics.terminal_seconds += time.perf_counter() - terminal_started
+
+    if ui.help_overlay:
+        draw_help_overlay(win)
+        if cache is not None:
+            cache.clear()
 
     if getattr(config.render, "show_stats", True):
         stats = [
