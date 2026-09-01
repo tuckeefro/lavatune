@@ -111,12 +111,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--renderer",
         choices=RENDERER_NAMES,
-        help="Presentation renderer: terminal-native tui (default) or experimental canvas.",
+        help="Presentation renderer: terminal-native tui (default), experimental canvas, or standalone window.",
     )
     parser.add_argument(
         "--canvas",
         action="store_true",
         help="Compatibility alias for --renderer canvas.",
+    )
+    parser.add_argument(
+        "--window",
+        action="store_true",
+        help="Open standalone floating window renderer.",
     )
     parser.add_argument(
         "--doctor",
@@ -173,13 +178,17 @@ def main() -> int:
         parser.error("--trace-once captures live audio and cannot be used with --demo")
     if args.motion_analysis is not None and args.demo:
         parser.error("--motion-analysis captures live audio and cannot be used with --demo")
+    if args.canvas and args.window:
+        parser.error("--canvas and --window cannot be combined")
     if args.canvas and args.renderer and args.renderer != "canvas":
         parser.error("--canvas cannot be combined with --renderer tui")
-    renderer_name = "canvas" if args.canvas else args.renderer
-    if args.trace_once is not None and renderer_name == "canvas":
-        parser.error("--trace-once cannot be used with the canvas renderer")
-    if args.motion_analysis is not None and renderer_name == "canvas":
-        parser.error("--motion-analysis cannot be used with the canvas renderer")
+    if args.window and args.renderer and args.renderer != "window":
+        parser.error("--window cannot be combined with --renderer tui")
+    renderer_name = "window" if args.window else ("canvas" if args.canvas else args.renderer)
+    if args.trace_once is not None and renderer_name in ("canvas", "window"):
+        parser.error(f"--trace-once cannot be used with the {renderer_name} renderer")
+    if args.motion_analysis is not None and renderer_name in ("canvas", "window"):
+        parser.error(f"--motion-analysis cannot be used with the {renderer_name} renderer")
 
     if args.list_themes:
         for theme in DEFAULT_THEME_NAMES:
@@ -271,6 +280,15 @@ def main() -> int:
             from .canvas import run_canvas
 
             return run_canvas(config, args.demo)
+        except RuntimeError as exc:
+            print(sanitize_display_text(str(exc), max_chars=500), file=sys.stderr)
+            return 1
+
+    if config.render.renderer == "window":
+        try:
+            from .window import run_window
+
+            return run_window(config, args.demo)
         except RuntimeError as exc:
             print(sanitize_display_text(str(exc), max_chars=500), file=sys.stderr)
             return 1

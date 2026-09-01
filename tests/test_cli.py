@@ -70,6 +70,42 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config.render.renderer, "canvas")
         self.assertTrue(demo)
 
+    def test_window_flag_routes_to_standalone_window(self) -> None:
+        with (
+            patch("sys.argv", ["lavatune", "--window", "--demo"]),
+            patch("lavatune.__main__.load_config", return_value=AppConfig()),
+            patch("lavatune.window.run_window", return_value=42) as run_window,
+        ):
+            self.assertEqual(main(), 42)
+
+        config, demo = run_window.call_args.args
+        self.assertEqual(config.render.renderer, "window")
+        self.assertTrue(demo)
+
+    def test_window_and_canvas_flags_cannot_be_combined(self) -> None:
+        errors = io.StringIO()
+        with (
+            patch("sys.argv", ["lavatune", "--window", "--canvas"]),
+            redirect_stderr(errors),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main()
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--canvas and --window cannot be combined", errors.getvalue())
+
+    def test_window_renderer_and_trace_once_are_incompatible(self) -> None:
+        errors = io.StringIO()
+        with (
+            patch("sys.argv", ["lavatune", "--window", "--trace-once", "10"]),
+            redirect_stderr(errors),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main()
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("cannot be used with the window renderer", errors.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

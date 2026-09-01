@@ -51,3 +51,19 @@ class TuiBoundaryTests(unittest.TestCase):
         self.assertIs(_visual_limits, visual_limits)
         self.assertIs(_draw_visual, draw_visual)
         self.assertIs(_draw_dock, draw_dock)
+
+    def test_focus_reports_do_not_quit_tui(self) -> None:
+        from lavatune.app import _handle_terminal_sequence
+
+        ui = UiState()
+        # Focus in: ESC [ I
+        for char in "\x1b[I":
+            _handle_terminal_sequence(ord(char), ui)
+        self.assertFalse(ui.quit_requested)
+        self.assertEqual(ui.escape_buffer, "")
+
+        # Focus out: ESC [ O
+        for char in "\x1b[O":
+            _handle_terminal_sequence(ord(char), ui)
+        self.assertFalse(ui.quit_requested)
+        self.assertEqual(ui.escape_buffer, "")

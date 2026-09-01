@@ -63,6 +63,12 @@ Run without live audio:
 lavatune --demo
 ```
 
+Run as a standalone floating window on macOS:
+
+```bash
+lavatune --window --demo
+```
+
 Check the machine and live audio path without entering the TUI:
 
 ```bash
@@ -127,7 +133,9 @@ For motion tuning, `--motion-analysis SECONDS` runs the production mapper and or
 lavatune --motion-analysis 30 --motion-output /tmp/lavatune-motion.json
 ```
 
-The terminal-native TUI is the default presentation renderer. For an opt-in pixel companion view, add `--renderer canvas` (the older `--canvas` alias still works). It needs the local GTK 3/PyGObject runtime and reuses the exact same audio analysis, phrase state, and organism physics through one renderer-neutral presentation frame. It draws at native window resolution with four organisms and two fixed local surfaces each; it does not use GPU shaders or a full-screen scalar field. Canvas is experimental; terminal mode remains the portable product.
+The terminal-native TUI is the default presentation renderer. For a standalone macOS floating window outside the terminal, use `--window` (or `--renderer window`). It opens a resizable (~600×420) translucent dark window without external GTK/PyGObject dependencies and reuses the same renderer-neutral organism physics and presentation frame. Close the window using the macOS close button, `Cmd+W`, `Esc`, or `q`. On macOS, live system audio capture requires a supported capture tool (`rec` from SoX, `ffmpeg`, or `parec`); when live audio capture is unavailable, pass `--demo` to run with synthetic audio.
+
+For an opt-in GTK pixel companion view on Linux, add `--renderer canvas` (the older `--canvas` alias still works). It needs the local GTK 3/PyGObject runtime and reuses the exact same audio analysis, phrase state, and organism physics through one renderer-neutral presentation frame. It draws at native window resolution with four organisms and two fixed local surfaces each; it does not use GPU shaders or a full-screen scalar field. Canvas is experimental; terminal mode remains the portable product.
 
 If automatic source selection fails, inspect sources with `wpctl status` or `pactl list short sources`, then pass the source with `--source`.
 
