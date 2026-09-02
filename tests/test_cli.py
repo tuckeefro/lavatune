@@ -70,6 +70,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config.render.renderer, "canvas")
         self.assertTrue(demo)
 
+    def test_renderer_kitty_routes_to_terminal_pixel_companion(self) -> None:
+        with (
+            patch("sys.argv", ["lavatune", "--renderer", "kitty", "--demo"]),
+            patch("lavatune.__main__.load_config", return_value=AppConfig()),
+            patch("lavatune.kitty.run_kitty", return_value=29) as run_kitty,
+        ):
+            self.assertEqual(main(), 29)
+
+        config, demo = run_kitty.call_args.args
+        self.assertEqual(config.render.renderer, "kitty")
+        self.assertTrue(demo)
+
     def test_window_flag_routes_to_standalone_window(self) -> None:
         with (
             patch("sys.argv", ["lavatune", "--window", "--demo"]),
@@ -105,6 +117,21 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("cannot be used with the window renderer", errors.getvalue())
+
+    def test_kitty_renderer_and_trace_once_are_incompatible(self) -> None:
+        errors = io.StringIO()
+        with (
+            patch(
+                "sys.argv",
+                ["lavatune", "--renderer", "kitty", "--trace-once", "10"],
+            ),
+            redirect_stderr(errors),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main()
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("cannot be used with the kitty renderer", errors.getvalue())
 
     def test_list_backends_includes_sox(self) -> None:
         backend_choices = [b for b in build_parser()._actions if b.dest == "backend"][0].choices
