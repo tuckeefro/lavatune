@@ -12,7 +12,7 @@ from lavatune.kitty import (
     _smooth_density,
     kitty_graphics_supported,
 )
-from lavatune.wax import WaxState
+from lavatune.wax import WAX_WIDTH, WaxState
 
 
 class KittyRendererTests(unittest.TestCase):
@@ -53,6 +53,16 @@ class KittyRendererTests(unittest.TestCase):
         self.assertLessEqual(width, 320)
         self.assertLessEqual(height, 192)
         self.assertAlmostEqual(width / height, (120 * 10) / (40 * 20), delta=0.01)
+
+    def test_renderer_maps_the_complete_wax_domain_across_the_framebuffer(self) -> None:
+        renderer = ImplicitWaxRenderer()
+        renderer._prepare_geometry(320, 192)
+
+        self.assertEqual(renderer._projection_x, 1.0)
+        self.assertIsNotNone(renderer._sample_x[0])
+        self.assertIsNotNone(renderer._sample_x[-1])
+        self.assertLess(float(renderer._sample_x[0]), 1.0)
+        self.assertGreater(float(renderer._sample_x[-1]), WAX_WIDTH - 2.0)
 
     def test_protocol_writer_fills_grid_without_moving_terminal_cursor(self) -> None:
         stream = io.BytesIO()
