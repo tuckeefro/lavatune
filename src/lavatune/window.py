@@ -28,6 +28,51 @@ class WindowCompanion:
         self.sequence = 0
         self.last_frame = AudioFrame(0.0, [0.0] * 8, 0.0, 0.0, time.monotonic())
         self.running = False
+        self._root = None
+        self._after_id: str | None = None
+        self._capture_started = False
+        self._closed = False
+        self._exit_exception: Exception | None = None
+
+    def close(self, event=None) -> None:
+        """Idempotently stop capture, cancel scheduling, and destroy GUI window."""
+        self.running = False
+        if self._closed:
+            return
+        self._closed = True
+
+        if self._root is not None and self._after_id is not None:
+            try:
+                self._root.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+        if self.capture is not None:
+            if self._capture_started:
+                try:
+                    self.capture.stop()
+                except Exception:
+                    pass
+                self._capture_started = False
+            self.capture = None
+
+        if self._root is not None:
+            try:
+                self._root.destroy()
+            except Exception:
+                pass
+            self._root = None
+
+    def _on_tk_exception(self, exc, val, tb) -> None:
+        if self._exit_exception is None:
+            if isinstance(val, Exception):
+                self._exit_exception = val
+            elif isinstance(exc, type) and issubclass(exc, Exception):
+                self._exit_exception = exc(val)
+            else:
+                self._exit_exception = RuntimeError(str(val))
+        self.close()
 
     def run(self) -> int:
         try:
@@ -44,105 +89,108 @@ class WindowCompanion:
                 f"--window failed to initialize GUI display: {exc}"
             ) from exc
 
-        from .runtime import LavaField
-
-        self.field = LavaField()
-        self.field.resize(96, 54)
-        self.capture = DemoAudioCapture() if self.demo else AudioCapture(self.config.audio)
-        self.capture.start()
-
-        root.title("Lavatune")
-        root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
-        root.minsize(320, 220)
-        root.resizable(True, True)
-
-        bg_color = "#0c1017"
-        root.configure(bg=bg_color)
+        self._root = root
+        root.report_callback_exception = self._on_tk_exception
 
         try:
-            root.attributes("-alpha", 0.88)
-        except tk.TclError:
-            pass
+            from .runtime import LavaField
 
-        try:
-            root.attributes("-topmost", False)
-        except tk.TclError:
-            pass
+            self.field = LavaField()
+            self.field.resize(96, 54)
+            self.capture = DemoAudioCapture() if self.demo else AudioCapture(self.config.audio)
+            if not self._capture_started:
+                self.capture.start()
+                self._capture_started = True
 
-        canvas = tk.Canvas(
-            root,
-            bg=bg_color,
-            highlightthickness=0,
-            borderwidth=0,
-        )
-        canvas.pack(fill=tk.BOTH, expand=True)
+            root.title("Lavatune")
+            root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+            root.minsize(320, 220)
+            root.resizable(True, True)
 
-        self.running = True
+            bg_color = "#0c1017"
+            root.configure(bg=bg_color)
 
-        def close_window(event=None) -> None:
-            if not self.running:
-                return
-            self.running = False
-            if self.capture is not None:
-                self.capture.stop()
-                self.capture = None
             try:
-                root.destroy()
+                root.attributes("-alpha", 0.88)
             except tk.TclError:
                 pass
 
-        root.protocol("WM_DELETE_WINDOW", close_window)
+            try:
+                root.attributes("-topmost", False)
+            except tk.TclError:
+                pass
 
-        root.bind("<Command-w>", close_window)
-        root.bind("<Command-W>", close_window)
-        root.bind("<Control-w>", close_window)
-        root.bind("<Control-W>", close_window)
-        root.bind("<Escape>", close_window)
-        root.bind("<q>", close_window)
-        root.bind("<Q>", close_window)
-
-        interval_ms = max(16, min(100, round(1000 / max(1, self.config.fps))))
-
-        def tick() -> None:
-            if not self.running:
-                return
-            if self.capture is None or self.field is None:
-                return
-
-            for captured in self.capture.drain_after(self.sequence):
-                self.sequence = captured.sequence
-                self.last_frame = captured.frame
-
-            if self.capture.error():
-                err = self.capture.error()
-                close_window()
-                raise RuntimeError(f"Audio capture error: {err}")
-
-            width = max(1, canvas.winfo_width())
-            height = max(1, canvas.winfo_height())
-
-            self.field.resize(max(60, width // 10), max(30, height // 12))
-            self.field.step(
-                self.last_frame,
-                "music",
-                self.config.profile,
-                self.config.lava.reactivity,
-                self.config.lava,
-                rasterize=False,
-                behavior=behavior_for_context(self.config.listening_context),
-                embody_posture=True,
+            canvas = tk.Canvas(
+                root,
+                bg=bg_color,
+                highlightthickness=0,
+                borderwidth=0,
             )
+            canvas.pack(fill=tk.BOTH, expand=True)
 
-            self._draw(canvas, width, height)
+            self.running = True
 
-            if self.running:
-                root.after(interval_ms, tick)
+            root.protocol("WM_DELETE_WINDOW", self.close)
 
-        root.after(0, tick)
-        try:
-            root.mainloop()
-        except KeyboardInterrupt:
-            close_window()
+            root.bind("<Command-w>", self.close)
+            root.bind("<Command-W>", self.close)
+            root.bind("<Control-w>", self.close)
+            root.bind("<Control-W>", self.close)
+            root.bind("<Escape>", self.close)
+            root.bind("<q>", self.close)
+            root.bind("<Q>", self.close)
+
+            interval_ms = max(16, min(100, round(1000 / max(1, self.config.fps))))
+
+            def tick() -> None:
+                if not self.running or self._closed:
+                    return
+                try:
+                    if self.capture is None or self.field is None:
+                        return
+
+                    for captured in self.capture.drain_after(self.sequence):
+                        self.sequence = captured.sequence
+                        self.last_frame = captured.frame
+
+                    if self.capture.error():
+                        err = self.capture.error()
+                        raise RuntimeError(f"Audio capture error: {err}")
+
+                    width = max(1, canvas.winfo_width())
+                    height = max(1, canvas.winfo_height())
+
+                    self.field.resize(max(10, width // 10), max(6, height // 12))
+                    self.field.step(
+                        self.last_frame,
+                        self.config.listening_context,
+                        self.config.profile,
+                        self.config.lava.reactivity,
+                        self.config.lava,
+                        rasterize=False,
+                        behavior=behavior_for_context(self.config.listening_context),
+                        embody_posture=True,
+                    )
+
+                    self._draw(canvas, width, height)
+
+                    if self.running and not self._closed and self._root is not None:
+                        self._after_id = self._root.after(interval_ms, tick)
+                except Exception as exc:
+                    if self._exit_exception is None:
+                        self._exit_exception = exc
+                    self.close()
+
+            self._after_id = root.after(0, tick)
+            try:
+                root.mainloop()
+            except KeyboardInterrupt:
+                pass
+        finally:
+            self.close()
+
+        if self._exit_exception is not None:
+            raise self._exit_exception
 
         return 0
 
