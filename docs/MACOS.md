@@ -1,8 +1,18 @@
 # Privacy-first macOS direction
 
-Status: architecture decision, not an implemented or advertised platform target yet.
+Status: architecture specification for future native Swift application.
 
-The macOS version should feel like the same acoustic organism while behaving like a small native utility. It should not embed the Linux terminal interface, a Python runtime, Electron, or a browser view.
+> **Important distinction:** This document describes the planned architecture for the future native macOS Swift application (utilizing Core Audio process taps). It does **not** describe the current Python companion.
+>
+> The current Python companion on macOS supports:
+> - Terminal TUI renderer (`lavatune`)
+> - Standalone floating window renderer (`lavatune --window`)
+> - Synthetic demo mode (`lavatune --demo`)
+> - Live microphone input (`lavatune` with `Microphone` listening context via `ffmpeg` or `sox`)
+>
+> Live system-output audio capture on macOS is unsupported in the Python companion and will be delivered by the native Swift application.
+
+The native macOS version should feel like the same acoustic organism while behaving like a small native utility. It should not embed the Linux terminal interface, a Python runtime, Electron, or a browser view.
 
 ## Platform boundary
 

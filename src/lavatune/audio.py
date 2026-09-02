@@ -154,6 +154,11 @@ class AudioCapture:
         )
 
     def _pick_backend(self, preferred: str) -> str:
+        if platform.system() == "Darwin" and self.config.capture_route == "system":
+            raise RuntimeError(
+                "Live system audio output capture is not supported on macOS in the Python companion. "
+                "Use --demo for synthetic audio or set listening context to microphone."
+            )
         if preferred != "auto":
             if preferred not in CAPTURE_BINARIES:
                 raise RuntimeError(f"Unsupported audio backend '{preferred}'")
@@ -172,7 +177,7 @@ class AudioCapture:
                 return backend
         if platform.system() == "Darwin":
             raise RuntimeError(
-                "No supported audio capture backend found on macOS. Install ffmpeg (e.g. brew install ffmpeg) or sox."
+                "No supported microphone capture backend found on macOS. Install ffmpeg (e.g. brew install ffmpeg) or sox."
             )
         raise RuntimeError(
             "No supported audio capture backend found. Install pw-cat, parec, or ffmpeg."

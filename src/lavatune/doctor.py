@@ -50,6 +50,23 @@ def _terminal_color_count() -> int:
 
 
 def _backend_check(config: AppConfig) -> tuple[DoctorCheck, str | None]:
+    if platform.system() == "Darwin" and config.audio.capture_route == "system":
+        available = [
+            backend
+            for backend in ("ffmpeg", "sox")
+            if backend in CAPTURE_BINARIES and shutil.which(CAPTURE_BINARIES[backend]) is not None
+        ]
+        return (
+            DoctorCheck(
+                "audio backend",
+                "warn",
+                "live system audio output capture is not supported on macOS in the Python companion"
+                + (f"; available capture tools for microphone: {', '.join(available)}" if available else ""),
+                "Use --demo for synthetic audio or set listening context to microphone.",
+            ),
+            available[0] if available else None,
+        )
+
     available = [
         backend
         for backend, binary in CAPTURE_BINARIES.items()
@@ -73,7 +90,7 @@ def _backend_check(config: AppConfig) -> tuple[DoctorCheck, str | None]:
                 "audio backend",
                 "error",
                 "no supported capture program found",
-                "Install pw-cat, parec, or ffmpeg.",
+                "Install pw-cat, parec, or ffmpeg." if platform.system() != "Darwin" else "Install ffmpeg or sox for microphone capture.",
             ),
             None,
         )

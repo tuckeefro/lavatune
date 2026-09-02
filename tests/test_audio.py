@@ -132,6 +132,23 @@ class AudioProcessTests(unittest.TestCase):
 
         self.assertEqual(capture._resolve_source("my-input"), "my-input")
 
+    @patch("lavatune.audio.platform.system", return_value="Darwin")
+    def test_darwin_system_route_raises_runtime_error(self, _system) -> None:
+        with self.assertRaises(RuntimeError) as ctx:
+            AudioCapture(AudioConfig(capture_route="system"))
+
+        self.assertIn("Live system audio output capture is not supported on macOS", str(ctx.exception))
+
+    @patch("lavatune.audio.platform.system", return_value="Darwin")
+    @patch("lavatune.audio.shutil.which")
+    def test_darwin_microphone_route_resolves_ffmpeg_source(self, which, _system) -> None:
+        which.side_effect = lambda binary: f"/usr/bin/{binary}" if binary == "ffmpeg" else None
+
+        capture = AudioCapture(AudioConfig(capture_route="microphone"))
+
+        self.assertEqual(capture.backend, "ffmpeg")
+        self.assertEqual(capture.source, ":default")
+
     def test_backend_status_and_diagnostics_are_sanitized(self) -> None:
         capture = capture_shell(source="monitor\x1b]0;spoof\x07")
         capture._stderr_tail.extend(b"failed\x1b]0;spoof\x07")

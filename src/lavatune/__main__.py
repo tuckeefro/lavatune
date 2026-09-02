@@ -30,7 +30,7 @@ from .trace import DEFAULT_TRACE_PATH, TRACE_MAX_SECONDS, TRACE_MIN_SECONDS, cap
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lavatune",
-        description="A terminal-native acoustic organism for Linux.",
+        description="A local-first terminal and desktop acoustic organism for Linux and macOS.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", help="Path to a TOML config override.")
