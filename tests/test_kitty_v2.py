@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
-from lavatune.kitty_v2 import PhotographicWaxRenderer, _blur
+from lavatune.config import AppConfig
+from lavatune.kitty_v2 import PhotographicWaxRenderer, _blur, main
 from lavatune.wax import WaxState
 
 
@@ -54,6 +56,21 @@ class PhotographicWaxRendererTests(unittest.TestCase):
         self.assertLess(min(luminance), 100)
         self.assertGreater(max(luminance), 120)
         self.assertGreater(max(luminance) - min(luminance), 50)
+
+    def test_standalone_launcher_uses_current_config_signature(self) -> None:
+        config = AppConfig()
+        with (
+            patch("sys.argv", ["python -m lavatune.kitty_v2", "--demo"]),
+            patch("lavatune.kitty_v2.preference_path", return_value="/tmp/preferences.json"),
+            patch("lavatune.kitty_v2.load_config", return_value=config) as load_config,
+            patch("lavatune.kitty_v2.run_photographic", return_value=17) as run_photographic,
+        ):
+            self.assertEqual(main(), 17)
+
+        args, kwargs = load_config.call_args
+        self.assertEqual(args, (None, None))
+        self.assertEqual(kwargs["saved_preferences"], "/tmp/preferences.json")
+        run_photographic.assert_called_once_with(config, True)
 
 
 if __name__ == "__main__":
