@@ -50,14 +50,48 @@ def _terminal_color_count() -> int:
 
 
 def _backend_check(config: AppConfig) -> tuple[DoctorCheck, str | None]:
+    if platform.system() == "Darwin" and config.audio.capture_route == "system":
+        available = [
+            backend
+            for backend in ("ffmpeg", "sox")
+            if backend in CAPTURE_BINARIES and shutil.which(CAPTURE_BINARIES[backend]) is not None
+        ]
+        return (
+            DoctorCheck(
+                "audio backend",
+                "warn",
+                "live system audio output capture is not supported on macOS in the Python companion"
+                + (f"; available capture tools for microphone: {', '.join(available)}" if available else ""),
+                "Use --demo for synthetic audio or set listening context to microphone.",
+            ),
+            available[0] if available else None,
+        )
+
+    valid_backends = (
+        ("ffmpeg", "sox")
+        if platform.system() == "Darwin"
+        else ("pipewire", "pulse", "ffmpeg")
+        if config.audio.capture_route == "system"
+        else ("pipewire", "pulse", "ffmpeg", "sox")
+    )
     available = [
         backend
-        for backend, binary in CAPTURE_BINARIES.items()
-        if shutil.which(binary) is not None
+        for backend in valid_backends
+        if shutil.which(CAPTURE_BINARIES[backend]) is not None
     ]
     preferred = config.audio.backend
     if preferred != "auto" and preferred not in available:
         binary = CAPTURE_BINARIES.get(preferred, preferred)
+        if preferred in CAPTURE_BINARIES and shutil.which(CAPTURE_BINARIES[preferred]) is not None:
+            return (
+                DoctorCheck(
+                    "audio backend",
+                    "error",
+                    f"requested backend '{preferred}' is available but does not support {config.audio.capture_route} capture",
+                    "Choose another backend or switch listening context.",
+                ),
+                None,
+            )
         return (
             DoctorCheck(
                 "audio backend",
@@ -68,12 +102,17 @@ def _backend_check(config: AppConfig) -> tuple[DoctorCheck, str | None]:
             None,
         )
     if not available:
+        remedy = (
+            "Install ffmpeg or sox for microphone capture."
+            if platform.system() == "Darwin"
+            else "Install pw-cat, parec, or ffmpeg."
+        )
         return (
             DoctorCheck(
                 "audio backend",
                 "error",
                 "no supported capture program found",
-                "Install pw-cat, parec, or ffmpeg.",
+                remedy,
             ),
             None,
         )

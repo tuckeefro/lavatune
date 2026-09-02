@@ -6,7 +6,7 @@ Start with:
 lavatune --doctor
 ```
 
-The command checks Linux and Python compatibility, terminal color support, installed audio backends, optional media metadata support, and whether a short live PCM probe receives frames. It does not save audio.
+The command checks Linux/macOS and Python compatibility, terminal color support, installed audio backends, optional media metadata support, and whether a short live PCM probe receives frames. It does not save audio.
 
 ## No capture backend
 
@@ -38,13 +38,10 @@ A container, sandbox, remote shell, or service session may have the backend exec
 
 ## No live PCM in doctor probe
 
-`lavatune --doctor` uses a short live PCM probe only on Linux in this alpha window. If the check reports no frames:
+`lavatune --doctor` runs a short live PCM probe. If the check reports an error or no frames:
 
-- verify audio is currently playing,
-- confirm the sink/source monitor exists and matches the `--source` value, and
-- use `lavatune --demo` to validate startup, rendering, and controls.
-
-If your platform is not Linux, the probe is skipped by design and shown as `skip` until the macOS track lands.
+- On Linux: verify audio is currently playing, confirm the sink/source monitor exists and matches the `--source` value, and try `lavatune --demo`.
+- On macOS: live system-output capture is unsupported in the Python companion. Running `lavatune --doctor` with system output selected will report that system audio capture is unsupported and suggest `--demo` or microphone mode (`Microphone` context or `capture_route = "microphone"` tests live microphone PCM).
 
 ## Limited or incorrect colors
 

@@ -12,11 +12,11 @@ It is designed as a quiet desktop companion rather than a bar equalizer: sound c
 
 Alpha. The core experience and packaging are usable, but visual defaults and the public name may change before `1.0`.
 
-The current implementation targets Linux. A lightweight native macOS sibling is planned around public Core Audio process taps, local opt-in metadata adapters, and shared acoustic behavior fixtures. It will not use screen capture, private media frameworks, or network account APIs. See [`docs/MACOS.md`](docs/MACOS.md).
+The Python package supports Linux and macOS. On Linux, it captures live system audio output via PipeWire, PulseAudio, or FFmpeg, or local microphone input. On macOS, the Python companion supports terminal TUI mode, the standalone window renderer (`--window`), synthetic demo mode (`--demo`), and live local microphone capture via `ffmpeg` or `rec` (SoX). Live system-output capture on macOS requires public Core Audio process taps, which are planned for the future native macOS Swift application. See [`docs/MACOS.md`](docs/MACOS.md).
 
 ## Features
 
-- reacts to system output through PipeWire, PulseAudio, or FFmpeg
+- reacts to system audio output on Linux or microphone/demo audio on macOS
 - diagnoses platform, terminal, backend, metadata, and live PCM readiness
 - distinguishes bass, voice, detail, cadence, and transients
 - recomposes the same body identities into micro, chimney, basin, and current habitats
@@ -41,20 +41,48 @@ Common package names include `pipewire-bin` and `pulseaudio-utils` on Debian/Ubu
 
 ## Install
 
-From a source checkout:
+### Recommended persistent user installation (`pipx`)
+
+To make `lavatune` available persistently in every terminal window without managing virtual environment activation:
+
+```bash
+pipx install lavatune
+```
+
+Or install from a local checkout:
+
+```bash
+pipx install .
+```
+
+Commands:
+- Verify: `lavatune --version` or `lavatune --doctor`
+- Upgrade: `pipx upgrade lavatune`
+- Uninstall: `pipx uninstall lavatune`
+
+### Development or virtualenv installation
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install -e '.[dev]'
 ```
 
-For development, install `-e '.[dev]'` instead.
+> **Why does `lavatune` disappear when you deactivate a `.venv`?**
+> Activating a `.venv` temporarily prepends `.venv/bin` to your shell's `PATH` variable for that session only. When you deactivate the environment or open a new terminal tab, `.venv/bin` is not in `PATH`, so running `lavatune` directly reports `command not found`. Use `pipx install` for a persistent global command, or invoke via `.venv/bin/lavatune`.
 
 ## Run
 
+Run the command directly (when installed via `pipx` or in an active `.venv`):
+
 ```bash
 lavatune
+```
+
+Alternatively, invoke as a Python module:
+
+```bash
+python3 -m lavatune
 ```
 
 Run without live audio:
@@ -133,7 +161,7 @@ For motion tuning, `--motion-analysis SECONDS` runs the production mapper and or
 lavatune --motion-analysis 30 --motion-output /tmp/lavatune-motion.json
 ```
 
-The terminal-native TUI is the default presentation renderer. For a standalone macOS floating window outside the terminal, use `--window` (or `--renderer window`). It opens a resizable (~600×420) translucent dark window without external GTK/PyGObject dependencies and reuses the same renderer-neutral organism physics and presentation frame. Close the window using the macOS close button, `Cmd+W`, `Esc`, or `q`. On macOS, live system audio capture requires a supported capture tool (`rec` from SoX, `ffmpeg`, or `parec`); when live audio capture is unavailable, pass `--demo` to run with synthetic audio.
+The terminal-native TUI is the default presentation renderer. For a standalone macOS or Linux floating window outside the terminal, use `--window` (or `--renderer window`). It opens a resizable (~600×420) translucent dark window without external GTK/PyGObject dependencies and reuses the same renderer-neutral organism physics and presentation frame. Close the window using the macOS close button, `Cmd+W`, `Esc`, or `q`. On macOS, the Python companion supports live microphone capture (`Microphone` listening context via `ffmpeg` or `rec` from SoX); when live microphone capture or system audio output capture is unavailable or unsupported, pass `--demo` to run with synthetic audio.
 
 For an opt-in GTK pixel companion view on Linux, add `--renderer canvas` (the older `--canvas` alias still works). It needs the local GTK 3/PyGObject runtime and reuses the exact same audio analysis, phrase state, and organism physics through one renderer-neutral presentation frame. It draws at native window resolution with four organisms and two fixed local surfaces each; it does not use GPU shaders or a full-screen scalar field. Canvas is experimental; terminal mode remains the portable product.
 
@@ -175,8 +203,8 @@ Common backend and source failures are covered in [`docs/TROUBLESHOOTING.md`](do
 
 ## Known limitations
 
-- Linux is the only implemented platform.
-- Audio capture depends on an installed `pw-cat`, `parec`, or PulseAudio-enabled `ffmpeg`.
+- Live system-output audio capture is currently supported on Linux only. On macOS, live system audio output capture is not supported in the Python companion; run with `--demo` or select `Microphone` input mode while native macOS Core Audio tap support is developed.
+- Audio capture on Linux depends on `pw-cat`, `parec`, or PulseAudio-enabled `ffmpeg`. macOS microphone capture depends on `ffmpeg` or `sox` (`rec`).
 - Monitor aliases vary across distributions and audio-server configurations.
 - Browser MPRIS metadata may expose only the browser name.
 - Alpha configuration and presentation details may change before `1.0`.

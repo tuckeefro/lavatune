@@ -109,6 +109,41 @@ class DoctorTests(unittest.TestCase):
         self.assertIn("no PCM arrived within 0.2s", format_report(report))
 
     @patch("lavatune.doctor._terminal_color_count", return_value=256)
+    @patch("lavatune.doctor.platform.system", return_value="Darwin")
+    @patch("lavatune.doctor.shutil.which")
+    def test_darwin_system_route_doctor_warns_and_errors_on_probe(self, which, _system, _colors) -> None:
+        which.side_effect = lambda binary: f"/usr/bin/{binary}" if binary in {"ffmpeg", "playerctl"} else None
+
+        report = inspect_environment(
+            load_config(None, None),
+            probe_audio=True,
+            probe_timeout=0.2,
+        )
+
+        self.assertEqual(report.errors, 1)
+        self.assertEqual(report.warnings, 1)
+        self.assertIn("live system audio output capture is not supported on macOS", format_report(report))
+
+    @patch("lavatune.doctor._terminal_color_count", return_value=256)
+    @patch("lavatune.doctor.platform.system", return_value="Darwin")
+    @patch("lavatune.doctor.shutil.which")
+    def test_darwin_microphone_route_doctor_passes_when_pcm_received(self, which, _system, _colors) -> None:
+        which.side_effect = lambda binary: f"/usr/bin/{binary}" if binary in {"ffmpeg", "playerctl"} else None
+        config = load_config(None, None)
+        config.listening_context = "microphone"
+        config.audio.capture_route = "microphone"
+
+        report = inspect_environment(
+            config,
+            probe_audio=True,
+            capture_factory=FakeCapture,
+        )
+
+        self.assertEqual(report.exit_code, 0)
+        self.assertEqual(report.errors, 0)
+        self.assertIn("received PCM", format_report(report))
+
+    @patch("lavatune.doctor._terminal_color_count", return_value=256)
     @patch("lavatune.doctor.platform.system", return_value="Windows")
     @patch("lavatune.doctor.shutil.which")
     def test_unsupported_environment_reports_skipped_audio_probe(self, which, _system, _colors) -> None:

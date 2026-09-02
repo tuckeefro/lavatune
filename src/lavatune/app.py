@@ -103,7 +103,7 @@ __all__ = [
 ]
 
 ANALYSIS_MODES = ("atlas", "bands")
-BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
+BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg", "sox")
 REACTIVITY_MODES: dict[str, float] = {
     "whisper": 0.65,
     "conversational": 1.0,
