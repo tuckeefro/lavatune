@@ -116,7 +116,8 @@ class AudioProcessTests(unittest.TestCase):
 
         self.assertEqual(command[command.index("--target") + 1], source)
 
-    def test_microphone_route_uses_the_backend_default_input(self) -> None:
+    @patch("lavatune.audio.platform.system", return_value="Linux")
+    def test_linux_microphone_route_uses_backend_default_input(self, _system) -> None:
         cases = {
             "pipewire": "@DEFAULT_AUDIO_SOURCE@",
             "pulse": "@DEFAULT_SOURCE@",
