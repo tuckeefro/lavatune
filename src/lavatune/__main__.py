@@ -27,6 +27,9 @@ from .motion import (
 from .trace import DEFAULT_TRACE_PATH, TRACE_MAX_SECONDS, TRACE_MIN_SECONDS, capture_trace
 
 
+EXPERIMENTAL_RENDERERS = ("kitty",)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lavatune",
@@ -110,8 +113,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--renderer",
-        choices=RENDERER_NAMES,
-        help="Presentation renderer: terminal-native tui (default), experimental canvas, or standalone window.",
+        choices=(*RENDERER_NAMES, *EXPERIMENTAL_RENDERERS),
+        help=(
+            "Presentation renderer: terminal-native tui (default), Kitty/Ghostty pixel wax, "
+            "experimental canvas, or standalone window."
+        ),
     )
     parser.add_argument(
         "--canvas",
@@ -181,13 +187,14 @@ def main() -> int:
     if args.canvas and args.window:
         parser.error("--canvas and --window cannot be combined")
     if args.canvas and args.renderer and args.renderer != "canvas":
-        parser.error("--canvas cannot be combined with --renderer tui")
+        parser.error("--canvas cannot be combined with another --renderer value")
     if args.window and args.renderer and args.renderer != "window":
-        parser.error("--window cannot be combined with --renderer tui")
+        parser.error("--window cannot be combined with another --renderer value")
     renderer_name = "window" if args.window else ("canvas" if args.canvas else args.renderer)
-    if args.trace_once is not None and renderer_name in ("canvas", "window"):
+    visual_renderers = ("canvas", "window", "kitty")
+    if args.trace_once is not None and renderer_name in visual_renderers:
         parser.error(f"--trace-once cannot be used with the {renderer_name} renderer")
-    if args.motion_analysis is not None and renderer_name in ("canvas", "window"):
+    if args.motion_analysis is not None and renderer_name in visual_renderers:
         parser.error(f"--motion-analysis cannot be used with the {renderer_name} renderer")
 
     if args.list_themes:
@@ -223,7 +230,9 @@ def main() -> int:
         config = apply_cli_overrides(
             config,
             backend_name=args.backend,
-            renderer_name=renderer_name,
+            # Kitty is deliberately CLI-only while the visual direction is
+            # still a prototype, so persisted config remains portable.
+            renderer_name=None if renderer_name == "kitty" else renderer_name,
             source=args.source,
             show_stats=args.show_stats,
             hide_stats=args.no_stats,
@@ -231,6 +240,8 @@ def main() -> int:
             max_visual_width=args.max_visual_width,
             max_visual_height=args.max_visual_height,
         )
+        if renderer_name == "kitty":
+            config.render.renderer = "kitty"
     except (OSError, TypeError, ValueError) as exc:
         print(f"Config error: {sanitize_display_text(str(exc), max_chars=500)}", file=sys.stderr)
         return 2
@@ -274,6 +285,15 @@ def main() -> int:
         )
         print(result.summary)
         return 0
+
+    if config.render.renderer == "kitty":
+        try:
+            from .kitty import run_kitty
+
+            return run_kitty(config, args.demo)
+        except RuntimeError as exc:
+            print(sanitize_display_text(str(exc), max_chars=500), file=sys.stderr)
+            return 1
 
     if config.render.renderer == "canvas":
         try:
