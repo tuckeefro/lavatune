@@ -30,7 +30,7 @@ from .trace import DEFAULT_TRACE_PATH, TRACE_MAX_SECONDS, TRACE_MIN_SECONDS, cap
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lavatune",
-        description="A terminal-native acoustic organism for Linux.",
+        description="A terminal-native acoustic organism for Linux and macOS.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--config", help="Path to a TOML config override.")
@@ -181,9 +181,9 @@ def main() -> int:
     if args.canvas and args.window:
         parser.error("--canvas and --window cannot be combined")
     if args.canvas and args.renderer and args.renderer != "canvas":
-        parser.error("--canvas cannot be combined with --renderer tui")
+        parser.error(f"--canvas cannot be combined with --renderer {args.renderer}")
     if args.window and args.renderer and args.renderer != "window":
-        parser.error("--window cannot be combined with --renderer tui")
+        parser.error(f"--window cannot be combined with --renderer {args.renderer}")
     renderer_name = "window" if args.window else ("canvas" if args.canvas else args.renderer)
     if args.trace_once is not None and renderer_name in ("canvas", "window"):
         parser.error(f"--trace-once cannot be used with the {renderer_name} renderer")

@@ -175,7 +175,7 @@ Common backend and source failures are covered in [`docs/TROUBLESHOOTING.md`](do
 
 ## Known limitations
 
-- Linux is the only implemented platform.
+- Linux is the primary platform, with standalone floating window (`--window`) and synthetic demo mode (`--demo`) support on macOS.
 - Audio capture depends on an installed `pw-cat`, `parec`, or PulseAudio-enabled `ffmpeg`.
 - Monitor aliases vary across distributions and audio-server configurations.
 - Browser MPRIS metadata may expose only the browser name.

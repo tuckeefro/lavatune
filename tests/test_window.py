@@ -46,6 +46,199 @@ class WindowRendererTests(unittest.TestCase):
             self.assertEqual(run_window(config, demo=True), 0)
             mock_run.assert_called_once()
 
+    def test_lifecycle_capture_starts_and_stops_exactly_once(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=False)
+        mock_tk, mock_root, _ = _make_mock_tk()
+
+        mock_capture = MagicMock()
+        mock_capture.error.return_value = None
+        mock_capture.drain_after.return_value = []
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            with patch("lavatune.window.AudioCapture", return_value=mock_capture):
+                def fake_mainloop():
+                    self.assertEqual(mock_root.after.call_count, 1)
+                    callback = mock_root.after.call_args[0][1]
+                    callback()
+                    companion.close()
+
+                mock_root.mainloop.side_effect = fake_mainloop
+                result = companion.run()
+                self.assertEqual(result, 0)
+
+        mock_capture.start.assert_called_once()
+        mock_capture.stop.assert_called_once()
+
+        companion.close()
+        mock_capture.stop.assert_called_once()
+
+    def test_duplicate_close_events_are_harmless(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=True)
+        mock_tk, mock_root, _ = _make_mock_tk()
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            def fake_mainloop():
+                companion.close()
+                companion.close()
+                companion.close()
+
+            mock_root.mainloop.side_effect = fake_mainloop
+            result = companion.run()
+            self.assertEqual(result, 0)
+
+    def test_keyboard_interrupt_cleans_up(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=False)
+        mock_tk, mock_root, _ = _make_mock_tk()
+        mock_capture = MagicMock()
+        mock_capture.error.return_value = None
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            with patch("lavatune.window.AudioCapture", return_value=mock_capture):
+                mock_root.mainloop.side_effect = KeyboardInterrupt
+                result = companion.run()
+                self.assertEqual(result, 0)
+
+        mock_capture.start.assert_called_once()
+        mock_capture.stop.assert_called_once()
+
+    def test_tk_callback_exception_propagates_nonzero(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=False)
+        mock_tk, mock_root, _ = _make_mock_tk()
+        mock_capture = MagicMock()
+        mock_capture.error.return_value = None
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            with patch("lavatune.window.AudioCapture", return_value=mock_capture):
+                def fake_mainloop():
+                    callback = mock_root.after.call_args[0][1]
+                    with patch.object(companion, "_draw", side_effect=ValueError("draw failure")):
+                        callback()
+
+                mock_root.mainloop.side_effect = fake_mainloop
+                with self.assertRaises(ValueError) as ctx:
+                    companion.run()
+                self.assertIn("draw failure", str(ctx.exception))
+
+        mock_capture.start.assert_called_once()
+        mock_capture.stop.assert_called_once()
+
+    def test_runtime_audio_error_propagates(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=False)
+        mock_tk, mock_root, _ = _make_mock_tk()
+        mock_capture = MagicMock()
+        mock_capture.error.return_value = "pw-cat disconnected unexpectedly"
+        mock_capture.drain_after.return_value = []
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            with patch("lavatune.window.AudioCapture", return_value=mock_capture):
+                def fake_mainloop():
+                    callback = mock_root.after.call_args[0][1]
+                    callback()
+
+                mock_root.mainloop.side_effect = fake_mainloop
+                with self.assertRaises(RuntimeError) as ctx:
+                    companion.run()
+                self.assertIn("pw-cat disconnected unexpectedly", str(ctx.exception))
+
+        mock_capture.start.assert_called_once()
+        mock_capture.stop.assert_called_once()
+
+    def test_partial_setup_initialization_failure_cleans_up(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=False)
+        mock_tk, mock_root, _ = _make_mock_tk()
+        mock_capture = MagicMock()
+
+        mock_root.geometry.side_effect = RuntimeError("Geometry error")
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            with patch("lavatune.window.AudioCapture", return_value=mock_capture):
+                with self.assertRaises(RuntimeError) as ctx:
+                    companion.run()
+                self.assertIn("Geometry error", str(ctx.exception))
+
+        mock_capture.start.assert_called_once()
+        mock_capture.stop.assert_called_once()
+
+    def test_resize_events_clamp_dimensions(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=True)
+        mock_tk, mock_root, mock_canvas = _make_mock_tk()
+        mock_canvas.winfo_width.return_value = 0
+        mock_canvas.winfo_height.return_value = 0
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            def fake_mainloop():
+                callback = mock_root.after.call_args[0][1]
+                callback()
+                companion.close()
+
+            mock_root.mainloop.side_effect = fake_mainloop
+            result = companion.run()
+            self.assertEqual(result, 0)
+            self.assertEqual(companion.field.w, 10)
+            self.assertEqual(companion.field.h, 6)
+
+    def test_demo_mode_lifecycle(self) -> None:
+        config = AppConfig()
+        companion = WindowCompanion(config, demo=True)
+        mock_tk, mock_root, _ = _make_mock_tk()
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            def fake_mainloop():
+                callback = mock_root.after.call_args[0][1]
+                callback()
+                companion.close()
+
+            mock_root.mainloop.side_effect = fake_mainloop
+            result = companion.run()
+            self.assertEqual(result, 0)
+            self.assertTrue(companion._closed)
+
+    def test_config_propagation(self) -> None:
+        config = AppConfig()
+        config.listening_context = "podcast"
+        config.profile = "responsive"
+        config.fps = 45
+
+        companion = WindowCompanion(config, demo=True)
+        mock_tk, mock_root, _ = _make_mock_tk()
+
+        with patch.dict("sys.modules", {"tkinter": mock_tk}):
+            def fake_mainloop():
+                callback = mock_root.after.call_args[0][1]
+                with patch.object(companion.field, "step") as mock_step:
+                    callback()
+                    mock_step.assert_called_once()
+                    args, _ = mock_step.call_args
+                    self.assertEqual(args[1], "podcast")
+                    self.assertEqual(args[2], "responsive")
+                companion.close()
+
+            mock_root.mainloop.side_effect = fake_mainloop
+            companion.run()
+            after_calls = mock_root.after.call_args_list
+            self.assertEqual(after_calls[1][0][0], 22)
+
+
+def _make_mock_tk():
+    import tkinter
+    mock_tk = MagicMock()
+    mock_tk.TclError = tkinter.TclError
+    mock_root = MagicMock()
+    mock_canvas = MagicMock()
+    mock_canvas.winfo_width.return_value = 600
+    mock_canvas.winfo_height.return_value = 420
+    mock_tk.Tk.return_value = mock_root
+    mock_tk.Canvas.return_value = mock_canvas
+    mock_tk.BOTH = "both"
+    return mock_tk, mock_root, mock_canvas
+
 
 if __name__ == "__main__":
     unittest.main()
