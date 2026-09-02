@@ -325,6 +325,7 @@ def main() -> int:
     saved_preferences = preference_path()
     config: AppConfig = load_config(
         args.config,
+        None,
         saved_preferences=None if args.config else saved_preferences,
     )
     # This module is intentionally a renderer lab, not another persisted mode.
