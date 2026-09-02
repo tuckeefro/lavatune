@@ -9,8 +9,8 @@ import unittest
 from collections import deque
 from unittest.mock import patch
 
-from lavatune.audio import AudioCapture, AudioFrame
-from lavatune.config import AudioConfig
+from lavatune.audio import CAPTURE_BINARIES, AudioCapture, AudioFrame
+from lavatune.config import BACKEND_NAMES, AudioConfig
 
 
 def capture_shell(backend: str = "pipewire", source: str | None = None) -> AudioCapture:
@@ -68,7 +68,11 @@ class FakeProcess:
 
 
 class AudioProcessTests(unittest.TestCase):
-    def test_capture_queue_is_bounded_sequenced_and_wakes_a_waiter(self) -> None:
+    def test_backend_binary_mapping_matches_public_backend_names(self) -> None:
+        self.assertEqual(tuple(CAPTURE_BINARIES), BACKEND_NAMES[1:])
+
+    @patch("lavatune.audio.platform.system", return_value="Linux")
+    def test_capture_queue_is_bounded_sequenced_and_wakes_a_waiter(self, _system) -> None:
         with patch("lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"):
             capture = AudioCapture(AudioConfig())
         try:
@@ -149,7 +153,28 @@ class AudioProcessTests(unittest.TestCase):
         self.assertEqual(capture.backend, "ffmpeg")
         self.assertEqual(capture.source, ":default")
 
-    def test_sox_backend_system_route_raises_runtime_error(self) -> None:
+    @patch("lavatune.audio.platform.system", return_value="Darwin")
+    @patch("lavatune.audio.shutil.which", return_value="/usr/bin/backend")
+    def test_darwin_microphone_rejects_linux_only_explicit_backends(self, _which, _system) -> None:
+        for backend in ("pipewire", "pulse"):
+            with self.subTest(backend=backend):
+                with self.assertRaises(RuntimeError) as ctx:
+                    AudioCapture(AudioConfig(backend=backend, capture_route="microphone"))
+                self.assertIn("is not supported on macOS", str(ctx.exception))
+
+    @patch("lavatune.audio.platform.system", return_value="Linux")
+    def test_linux_system_auto_does_not_fall_back_to_sox(self, _system) -> None:
+        with patch(
+            "lavatune.audio.shutil.which",
+            side_effect=lambda binary: "/usr/bin/rec" if binary == "rec" else None,
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                AudioCapture(AudioConfig(backend="auto", capture_route="system"))
+
+        self.assertIn("system-output capture backend", str(ctx.exception))
+
+    @patch("lavatune.audio.platform.system", return_value="Linux")
+    def test_sox_backend_system_route_raises_runtime_error(self, _system) -> None:
         with patch("lavatune.audio.shutil.which", return_value="/usr/bin/rec"):
             with self.assertRaises(RuntimeError) as ctx:
                 AudioCapture(AudioConfig(backend="sox", capture_route="system"))
