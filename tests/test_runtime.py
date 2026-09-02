@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import platform
 import pty
 import struct
 import subprocess
@@ -19,6 +20,10 @@ def resize(fd: int, rows: int, columns: int) -> None:
 
 
 class RuntimeTests(unittest.TestCase):
+    @unittest.skipIf(
+        platform.system() == "Darwin",
+        "PTY/curses resize integration is Linux-verified; macOS terminal behavior requires manual validation",
+    )
     def test_compact_resize_race_does_not_crash_renderer(self) -> None:
         master, slave = pty.openpty()
         resize(slave, 3, 12)
@@ -69,6 +74,10 @@ class RuntimeTests(unittest.TestCase):
 
         self.assertNotIn(b"Traceback", output)
 
+    @unittest.skipIf(
+        platform.system() == "Darwin",
+        "PTY/curses resize integration is Linux-verified; macOS terminal behavior requires manual validation",
+    )
     def test_fluid_material_survives_live_resize_and_restores_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             preferences = Path(directory) / "lavatune" / "preferences.json"
