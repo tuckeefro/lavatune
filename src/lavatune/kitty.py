@@ -225,9 +225,13 @@ class ImplicitWaxRenderer:
         key = (width, height)
         if key == self._cache_key:
             return
-        # A square-root correction fills a wide terminal while keeping the
-        # wax far rounder than direct full-width stretching.
-        projection_x = max(1.0, math.sqrt(width / max(1.0, height)))
+
+        # The framebuffer aspect already matches Ghostty's physical cell grid.
+        # Map the complete wax domain directly across that framebuffer.  The old
+        # square-root projection applied a second aspect correction here, which
+        # manufactured visible side dead-space even though the Kitty placement
+        # itself correctly occupied the full terminal grid.
+        projection_x = 1.0
         background = bytearray(width * height * 3)
         offset = 0
         for py in range(height):
@@ -235,13 +239,9 @@ class ImplicitWaxRenderer:
                 r, g, b = _background(px, py, width, height)
                 background[offset : offset + 3] = bytes((r, g, b))
                 offset += 3
-        sample_x: list[float | None] = []
-        for px in range(width):
-            screen_x = (px + 0.5) / width
-            wax_x = 0.5 + (screen_x - 0.5) * projection_x
-            sample_x.append(
-                wax_x * (WAX_WIDTH - 1) if 0.0 <= wax_x <= 1.0 else None
-            )
+        sample_x: list[float | None] = [
+            ((px + 0.5) / width) * (WAX_WIDTH - 1) for px in range(width)
+        ]
         self._cache_key = key
         self._background_rgb = bytes(background)
         self._sample_x = tuple(sample_x)
