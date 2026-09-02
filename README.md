@@ -34,28 +34,64 @@ The Python package supports Linux and macOS. On Linux, it captures live system a
 - Linux or macOS (Apple Silicon / Intel)
 - Python 3.11 or newer
 - a terminal with color and `curses` support
-- one audio capture program: `pw-cat`, `parec`, `ffmpeg`, or `rec` (sox)
+- one audio capture program appropriate to the selected platform and route: `pw-cat`, `parec`, `ffmpeg`, or `rec` (SoX)
 - optionally, `playerctl` for media titles
 
 Common package names include `pipewire-bin` and `pulseaudio-utils` on Debian/Ubuntu, `pipewire-utils` on Fedora, and `pipewire` on Arch Linux. Package names vary by distribution.
 
 ## Install
 
-From a source checkout:
+### Recommended persistent user installation (`pipx`)
+
+PyPI publishing is not enabled yet. Install the current public source directly from GitHub so `lavatune` remains available outside a project virtual environment:
+
+```bash
+pipx install git+https://github.com/tuckeefro/lavatune.git
+```
+
+Or install from a local checkout:
+
+```bash
+pipx install .
+```
+
+Useful package-management commands:
+
+```bash
+lavatune --version
+lavatune --doctor
+pipx install --force git+https://github.com/tuckeefro/lavatune.git
+pipx uninstall lavatune
+```
+
+The `--force` install refreshes a GitHub-source installation to the current repository state. Once PyPI publishing is enabled, this section can switch to the shorter `pipx install lavatune` / `pipx upgrade lavatune` flow.
+
+### Development or virtualenv installation
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install -e '.[dev]'
 ```
 
-For development, install `-e '.[dev]'` instead.
+> **Why does `lavatune` disappear when you deactivate a `.venv`?**
+> Activating a `.venv` temporarily prepends `.venv/bin` to your shell's `PATH` for that session. Deactivation removes it, so a package installed only in that environment is no longer found as a bare command. Use `pipx` for a persistent command, reactivate the development environment, or invoke `.venv/bin/lavatune` directly.
 
 ## Run
+
+Run the command directly when installed through `pipx` or from an active virtual environment:
 
 ```bash
 lavatune
 ```
+
+If Lavatune is installed into the currently active Python environment, module invocation is equivalent:
+
+```bash
+python -m lavatune
+```
+
+A `pipx` installation is intentionally isolated, so the system `python3 -m lavatune` is not expected to find the package unless that interpreter also has Lavatune installed.
 
 Run without live audio:
 
@@ -158,7 +194,6 @@ For the experimental lava lamp, use [`configs/experimental-wax.toml`](configs/ex
 ```bash
 lavatune --config configs/experimental-wax.toml
 ```
-
 
 The compact tile integration accepts these environment variables:
 

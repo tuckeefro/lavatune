@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "lavatune"
 dynamic = ["version"]
-description = "A terminal-native acoustic organism for Linux."
+description = "A local-first acoustic organism for Linux and macOS."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -13,11 +13,12 @@ license-files = ["LICENSE"]
 authors = [
   { name = "Tucker Vana" }
 ]
-keywords = ["audio", "terminal", "visualizer", "linux", "pipewire", "pulse", "tui"]
+keywords = ["audio", "terminal", "visualizer", "linux", "macos", "pipewire", "pulse", "tui"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: End Users/Desktop",
+  "Operating System :: MacOS :: MacOS X",
   "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
@@ -45,7 +46,7 @@ dev = [
 lavatune = "lavatune.__main__:main"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"" = "src" }
 
 [tool.setuptools.dynamic]
 version = { attr = "lavatune.__version__" }

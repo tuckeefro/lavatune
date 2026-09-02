@@ -1,4 +1,4 @@
-"""Linux monitor capture and lightweight PCM analysis."""
+"""Local audio capture and lightweight PCM analysis."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class CapturedAudioFrame:
 
 
 class AudioCapture:
-    """Read signed 16-bit PCM from one local Linux audio backend."""
+    """Read signed 16-bit PCM from one supported local audio backend."""
 
     def __init__(self, config: AudioConfig) -> None:
         self.config = config
@@ -154,7 +154,9 @@ class AudioCapture:
         )
 
     def _pick_backend(self, preferred: str) -> str:
-        if platform.system() == "Darwin" and self.config.capture_route == "system":
+        system = platform.system()
+        route = self.config.capture_route
+        if system == "Darwin" and route == "system":
             raise RuntimeError(
                 "Live system audio output capture is not supported on macOS in the Python companion. "
                 "Use --demo for synthetic audio or set listening context to microphone."
@@ -162,25 +164,41 @@ class AudioCapture:
         if preferred != "auto":
             if preferred not in CAPTURE_BINARIES:
                 raise RuntimeError(f"Unsupported audio backend '{preferred}'")
+            if system == "Darwin" and preferred in {"pipewire", "pulse"}:
+                raise RuntimeError(
+                    f"Audio backend '{preferred}' is not supported on macOS. "
+                    "Use ffmpeg or sox for microphone capture."
+                )
+            if preferred == "sox" and route == "system":
+                raise RuntimeError(
+                    "Audio backend 'sox' does not support system output capture. "
+                    "Choose another backend or set listening context to microphone."
+                )
             if shutil.which(CAPTURE_BINARIES[preferred]) is None:
                 raise RuntimeError(
                     f"Audio backend '{preferred}' requires "
                     f"'{CAPTURE_BINARIES[preferred]}' in PATH."
                 )
             return preferred
-        if platform.system() == "Darwin":
+        if system == "Darwin":
             for backend in ("ffmpeg", "sox"):
-                if backend in CAPTURE_BINARIES and shutil.which(CAPTURE_BINARIES[backend]):
+                if shutil.which(CAPTURE_BINARIES[backend]):
                     return backend
-        for backend, binary in CAPTURE_BINARIES.items():
-            if shutil.which(binary):
-                return backend
-        if platform.system() == "Darwin":
             raise RuntimeError(
-                "No supported microphone capture backend found on macOS. Install ffmpeg (e.g. brew install ffmpeg) or sox."
+                "No supported microphone capture backend found on macOS. Install ffmpeg or sox."
             )
+        if route == "system":
+            for backend in ("pipewire", "pulse", "ffmpeg"):
+                if shutil.which(CAPTURE_BINARIES[backend]):
+                    return backend
+            raise RuntimeError(
+                "No supported system-output capture backend found. Install pw-cat, parec, or ffmpeg."
+            )
+        for backend in ("pipewire", "pulse", "ffmpeg", "sox"):
+            if shutil.which(CAPTURE_BINARIES[backend]):
+                return backend
         raise RuntimeError(
-            "No supported audio capture backend found. Install pw-cat, parec, or ffmpeg."
+            "No supported microphone capture backend found. Install pw-cat, parec, ffmpeg, or sox."
         )
 
     def _resolve_source(self, configured: str | None) -> str | None:

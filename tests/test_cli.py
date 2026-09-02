@@ -106,6 +106,18 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 2)
         self.assertIn("cannot be used with the window renderer", errors.getvalue())
 
+    def test_list_backends_includes_sox(self) -> None:
+        backend_choices = [b for b in build_parser()._actions if b.dest == "backend"][0].choices
+        self.assertIn("sox", backend_choices)
+
+    def test_main_list_backends_outputs_sox(self) -> None:
+        output = io.StringIO()
+        with patch("sys.argv", ["lavatune", "--list-backends"]), redirect_stdout(output):
+            code = main()
+
+        self.assertEqual(code, 0)
+        self.assertIn("sox", output.getvalue().splitlines())
+
 
 if __name__ == "__main__":
     unittest.main()

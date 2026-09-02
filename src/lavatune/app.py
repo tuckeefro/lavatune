@@ -12,6 +12,7 @@ from typing import Callable, Sequence
 
 from .audio import AudioCapture, AudioFrame, DemoAudioCapture
 from .config import (
+    BACKEND_NAMES,
     CONTENT_MODES,
     PROFILE_NAMES,
     AppConfig,
@@ -103,7 +104,8 @@ __all__ = [
 ]
 
 ANALYSIS_MODES = ("atlas", "bands")
-BACKEND_MODES = ("auto", "pipewire", "pulse", "ffmpeg")
+# Compatibility alias; config.BACKEND_NAMES is the canonical public backend vocabulary.
+BACKEND_MODES = BACKEND_NAMES
 REACTIVITY_MODES: dict[str, float] = {
     "whisper": 0.65,
     "conversational": 1.0,
