@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import math
 import os
+import re
 import select
 import sys
 import termios
@@ -28,10 +29,10 @@ from .wax import WAX_HEIGHT, WAX_WIDTH, WaxState
 
 _IMAGE_ID = 719
 _PLACEMENT_ID = 1
-_MIN_RENDER_WIDTH = 180
-_MIN_RENDER_HEIGHT = 108
 _MAX_RENDER_WIDTH = 320
 _MAX_RENDER_HEIGHT = 192
+_DEFAULT_CELL_WIDTH_PX = 10
+_DEFAULT_CELL_HEIGHT_PX = 19
 
 
 @dataclass(slots=True, frozen=True)
@@ -60,22 +61,72 @@ def kitty_graphics_supported(environment: dict[str, str] | None = None) -> bool:
     )
 
 
-def _render_size(columns: int, rows: int) -> tuple[int, int]:
-    """Bound rendering while roughly matching the terminal's physical aspect."""
+def _parse_cell_size_response(response: bytes) -> tuple[int, int] | None:
+    """Parse an XTWINOPS CSI 16 t response into (cell_width_px, cell_height_px)."""
 
-    columns = max(1, columns)
-    rows = max(1, rows)
-    physical_aspect = columns / (rows * 1.85)
-    height = max(_MIN_RENDER_HEIGHT, min(_MAX_RENDER_HEIGHT, rows * 6))
-    width = int(round(height * physical_aspect))
-    if width > _MAX_RENDER_WIDTH:
-        width = _MAX_RENDER_WIDTH
-        height = int(round(width / max(0.1, physical_aspect)))
-    if width < _MIN_RENDER_WIDTH:
-        width = _MIN_RENDER_WIDTH
-        height = int(round(width / max(0.1, physical_aspect)))
-    height = max(_MIN_RENDER_HEIGHT, min(_MAX_RENDER_HEIGHT, height))
+    match = re.search(rb"\x1b\[6;(\d+);(\d+)t", response)
+    if match is None:
+        return None
+    height = int(match.group(1))
+    width = int(match.group(2))
+    if width <= 0 or height <= 0:
+        return None
     return width, height
+
+
+def _query_cell_pixels(
+    input_fd: int,
+    stream: BinaryIO,
+    *,
+    timeout: float = 0.08,
+) -> tuple[int, int] | None:
+    """Ask a supporting terminal for its real cell size without making it required."""
+
+    stream.write(b"\x1b[16t")
+    stream.flush()
+    deadline = time.monotonic() + max(0.0, timeout)
+    response = bytearray()
+    while time.monotonic() < deadline and len(response) < 256:
+        remaining = max(0.0, deadline - time.monotonic())
+        readable, _, _ = select.select([input_fd], [], [], remaining)
+        if not readable:
+            break
+        chunk = os.read(input_fd, 64)
+        if not chunk:
+            break
+        response.extend(chunk)
+        parsed = _parse_cell_size_response(bytes(response))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _render_size(
+    columns: int,
+    rows: int,
+    cell_width_px: int = _DEFAULT_CELL_WIDTH_PX,
+    cell_height_px: int = _DEFAULT_CELL_HEIGHT_PX,
+) -> tuple[int, int]:
+    """Match the framebuffer aspect to the terminal's real drawable cell grid."""
+
+    columns = max(1, int(columns))
+    rows = max(1, int(rows))
+    cell_width_px = max(1, int(cell_width_px))
+    cell_height_px = max(1, int(cell_height_px))
+    grid_width_px = columns * cell_width_px
+    grid_height_px = rows * cell_height_px
+
+    # Kitty/Ghostty scales the supplied RGB frame over exactly c×r cells.
+    # Preserve that physical aspect here so the terminal only scales size,
+    # never shape.  This removes the old guessed 1.85 cell-aspect stretch.
+    scale = min(
+        1.0,
+        _MAX_RENDER_WIDTH / grid_width_px,
+        _MAX_RENDER_HEIGHT / grid_height_px,
+    )
+    width = max(32, int(round(grid_width_px * scale)))
+    height = max(24, int(round(grid_height_px * scale)))
+    return min(_MAX_RENDER_WIDTH, width), min(_MAX_RENDER_HEIGHT, height)
 
 
 def _smoothstep(edge0: float, edge1: float, value: float) -> float:
@@ -174,9 +225,13 @@ class ImplicitWaxRenderer:
         key = (width, height)
         if key == self._cache_key:
             return
-        # A square-root correction fills a wide terminal while keeping the
-        # wax far rounder than direct full-width stretching.
-        projection_x = max(1.0, math.sqrt(width / max(1.0, height)))
+
+        # The framebuffer aspect already matches Ghostty's physical cell grid.
+        # Map the complete wax domain directly across that framebuffer.  The old
+        # square-root projection applied a second aspect correction here, which
+        # manufactured visible side dead-space even though the Kitty placement
+        # itself correctly occupied the full terminal grid.
+        projection_x = 1.0
         background = bytearray(width * height * 3)
         offset = 0
         for py in range(height):
@@ -184,13 +239,9 @@ class ImplicitWaxRenderer:
                 r, g, b = _background(px, py, width, height)
                 background[offset : offset + 3] = bytes((r, g, b))
                 offset += 3
-        sample_x: list[float | None] = []
-        for px in range(width):
-            screen_x = (px + 0.5) / width
-            wax_x = 0.5 + (screen_x - 0.5) * projection_x
-            sample_x.append(
-                wax_x * (WAX_WIDTH - 1) if 0.0 <= wax_x <= 1.0 else None
-            )
+        sample_x: list[float | None] = [
+            ((px + 0.5) / width) * (WAX_WIDTH - 1) for px in range(width)
+        ]
         self._cache_key = key
         self._background_rgb = bytes(background)
         self._sample_x = tuple(sample_x)
@@ -320,7 +371,7 @@ class KittyGraphicsWriter:
                 control = (
                     f"a=T,f=24,s={frame.width},v={frame.height},o=z,t=d,"
                     f"i={_IMAGE_ID},p={_PLACEMENT_ID},c={max(1, columns)},r={max(1, rows)},"
-                    f"N=1,q=1,m={more}"
+                    f"C=1,N=1,q=1,m={more}"
                 )
             else:
                 # Kitty requires continuation chunks to carry only m and q.
@@ -364,12 +415,18 @@ class KittyCompanion:
         original_termios = termios.tcgetattr(sys.stdin.fileno())
         target_fps = max(8, min(20, self.config.fps))
         deadline = time.monotonic()
+        cell_width_px = _DEFAULT_CELL_WIDTH_PX
+        cell_height_px = _DEFAULT_CELL_HEIGHT_PX
+        last_grid: tuple[int, int] | None = None
 
         capture.start()
         try:
             tty.setcbreak(sys.stdin.fileno())
             sys.stdout.write("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H")
             sys.stdout.flush()
+            measured_cell = _query_cell_pixels(sys.stdin.fileno(), sys.stdout.buffer)
+            if measured_cell is not None:
+                cell_width_px, cell_height_px = measured_cell
             try:
                 while True:
                     now = time.monotonic()
@@ -387,7 +444,22 @@ class KittyCompanion:
                     columns, rows = os.get_terminal_size(sys.stdout.fileno())
                     columns = max(20, columns)
                     rows = max(8, rows)
-                    render_width, render_height = _render_size(columns, rows)
+                    grid = (columns, rows)
+                    if grid != last_grid:
+                        if last_grid is not None:
+                            # Remove the old full-grid placement before drawing
+                            # at a new size so a resize cannot leave stale pixels.
+                            self.writer.delete()
+                            sys.stdout.write("\x1b[2J\x1b[H")
+                            sys.stdout.flush()
+                        last_grid = grid
+
+                    render_width, render_height = _render_size(
+                        columns,
+                        rows,
+                        cell_width_px,
+                        cell_height_px,
+                    )
                     field.resize(max(60, columns), max(30, rows * 2))
                     field.step(
                         self.last_frame,
