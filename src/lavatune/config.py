@@ -12,7 +12,7 @@ from typing import Any
 import tomllib
 
 
-BACKEND_NAMES = ("auto", "pipewire", "pulse", "ffmpeg")
+BACKEND_NAMES = ("auto", "pipewire", "pulse", "ffmpeg", "sox")
 PROFILE_NAMES = ("power-save", "atlas", "responsive")
 CONTENT_MODES = ("auto", "music", "speech", "book")
 LISTENING_CONTEXTS = ("podcast", "radio", "music", "microphone")

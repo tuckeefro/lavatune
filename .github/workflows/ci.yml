@@ -15,12 +15,13 @@ permissions:
 
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - name: Check out repository
@@ -35,7 +36,12 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
       - name: Check command entry point
-        run: lavatune --help
+        run: |
+          lavatune --help
+          lavatune --version
+          python -m lavatune --version
+      - name: Static environment check
+        run: lavatune --doctor --no-audio-probe
 
   quality:
     name: Package quality

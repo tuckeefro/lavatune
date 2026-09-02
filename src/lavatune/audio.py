@@ -162,6 +162,11 @@ class AudioCapture:
         if preferred != "auto":
             if preferred not in CAPTURE_BINARIES:
                 raise RuntimeError(f"Unsupported audio backend '{preferred}'")
+            if preferred == "sox" and self.config.capture_route == "system":
+                raise RuntimeError(
+                    "Audio backend 'sox' does not support system output capture. "
+                    "Choose another backend or set listening context to microphone."
+                )
             if shutil.which(CAPTURE_BINARIES[preferred]) is None:
                 raise RuntimeError(
                     f"Audio backend '{preferred}' requires "
@@ -172,15 +177,21 @@ class AudioCapture:
             for backend in ("ffmpeg", "sox"):
                 if backend in CAPTURE_BINARIES and shutil.which(CAPTURE_BINARIES[backend]):
                     return backend
-        for backend, binary in CAPTURE_BINARIES.items():
-            if shutil.which(binary):
-                return backend
-        if platform.system() == "Darwin":
             raise RuntimeError(
                 "No supported microphone capture backend found on macOS. Install ffmpeg (e.g. brew install ffmpeg) or sox."
             )
+        if self.config.capture_route == "system":
+            for backend in ("pipewire", "pulse", "ffmpeg"):
+                if shutil.which(CAPTURE_BINARIES[backend]):
+                    return backend
+            raise RuntimeError(
+                "No supported audio capture backend found. Install pw-cat, parec, or ffmpeg."
+            )
+        for backend in ("pipewire", "pulse", "ffmpeg", "sox"):
+            if shutil.which(CAPTURE_BINARIES[backend]):
+                return backend
         raise RuntimeError(
-            "No supported audio capture backend found. Install pw-cat, parec, or ffmpeg."
+            "No supported audio capture backend found. Install pw-cat, parec, ffmpeg, or sox."
         )
 
     def _resolve_source(self, configured: str | None) -> str | None:

@@ -149,6 +149,21 @@ class AudioProcessTests(unittest.TestCase):
         self.assertEqual(capture.backend, "ffmpeg")
         self.assertEqual(capture.source, ":default")
 
+    def test_sox_backend_system_route_raises_runtime_error(self) -> None:
+        with patch("lavatune.audio.shutil.which", return_value="/usr/bin/rec"):
+            with self.assertRaises(RuntimeError) as ctx:
+                AudioCapture(AudioConfig(backend="sox", capture_route="system"))
+
+            self.assertIn("sox' does not support system output capture", str(ctx.exception))
+
+    def test_sox_backend_microphone_route_resolves_default_source(self) -> None:
+        with patch("lavatune.audio.shutil.which", return_value="/usr/bin/rec"):
+            capture = AudioCapture(AudioConfig(backend="sox", capture_route="microphone"))
+
+            self.assertEqual(capture.backend, "sox")
+            self.assertEqual(capture.source, "default")
+            self.assertIn("rec", capture._command())
+
     def test_backend_status_and_diagnostics_are_sanitized(self) -> None:
         capture = capture_shell(source="monitor\x1b]0;spoof\x07")
         capture._stderr_tail.extend(b"failed\x1b]0;spoof\x07")

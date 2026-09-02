@@ -41,20 +41,48 @@ Common package names include `pipewire-bin` and `pulseaudio-utils` on Debian/Ubu
 
 ## Install
 
-From a source checkout:
+### Recommended persistent user installation (`pipx`)
+
+To make `lavatune` available persistently in every terminal window without managing virtual environment activation:
+
+```bash
+pipx install lavatune
+```
+
+Or install from a local checkout:
+
+```bash
+pipx install .
+```
+
+Commands:
+- Verify: `lavatune --version` or `lavatune --doctor`
+- Upgrade: `pipx upgrade lavatune`
+- Uninstall: `pipx uninstall lavatune`
+
+### Development or virtualenv installation
 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install .
+python -m pip install -e '.[dev]'
 ```
 
-For development, install `-e '.[dev]'` instead.
+> **Why does `lavatune` disappear when you deactivate a `.venv`?**
+> Activating a `.venv` temporarily prepends `.venv/bin` to your shell's `PATH` variable for that session only. When you deactivate the environment or open a new terminal tab, `.venv/bin` is not in `PATH`, so running `lavatune` directly reports `command not found`. Use `pipx install` for a persistent global command, or invoke via `.venv/bin/lavatune`.
 
 ## Run
 
+Run the command directly (when installed via `pipx` or in an active `.venv`):
+
 ```bash
 lavatune
+```
+
+Alternatively, invoke as a Python module:
+
+```bash
+python3 -m lavatune
 ```
 
 Run without live audio:
