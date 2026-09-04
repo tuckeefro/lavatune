@@ -930,6 +930,8 @@ def _run_curses(
     scheduler = FrameScheduler()
     try:
         while not ui.quit_requested:
+            if capture.error():
+                raise RuntimeError(capture.error())
             field.metrics.wakeups += 1
             interacted = False
             while True:
