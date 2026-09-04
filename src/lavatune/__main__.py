@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import signal
 import sys
 from pathlib import Path
 
@@ -168,7 +169,18 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _install_signal_handlers() -> None:
+    def handle_sigterm(_signum, _frame):
+        raise KeyboardInterrupt()
+
+    try:
+        signal.signal(signal.SIGTERM, handle_sigterm)
+    except (ValueError, OSError):
+        pass
+
+
 def main() -> int:
+    _install_signal_handlers()
     parser = build_parser()
     args = parser.parse_args()
 

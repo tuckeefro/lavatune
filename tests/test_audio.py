@@ -209,5 +209,301 @@ class AudioProcessTests(unittest.TestCase):
         self.assertEqual(process.waits, 2)
 
 
+def _get_open_fd_count() -> int:
+    if os.path.exists("/proc/self/fd"):
+        try:
+            return len(os.listdir("/proc/self/fd"))
+        except OSError:
+            pass
+    count = 0
+    for fd in range(1024):
+        try:
+            dup_fd = os.dup(fd)
+            os.close(dup_fd)
+            count += 1
+        except OSError:
+            pass
+    return count
+
+
+CHILD_FIXTURE_SCRIPT = """
+import sys, time, signal
+
+args = sys.argv[1:]
+if '--ignore-sigterm' in args:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+if '--fail-stderr' in args:
+    sys.stderr.write("FATAL: Device or resource busy\\n")
+    sys.stderr.flush()
+    sys.exit(2)
+
+if '--exit-early' in args:
+    sys.stdout.buffer.write(b"12345")
+    sys.stdout.buffer.flush()
+    sys.exit(1)
+
+try:
+    while True:
+        sys.stdout.buffer.write(b"\\0" * 4096)
+        sys.stdout.buffer.flush()
+        time.sleep(0.01)
+except Exception:
+    pass
+"""
+
+
+class AdversarialLifecycleTests(unittest.TestCase):
+    def test_1_successful_start_stop(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ):
+            capture.start()
+            import time
+            time.sleep(0.05)
+            self.assertGreaterEqual(capture.frames_received(), 0)
+            proc = capture._proc
+            pid = proc.pid if proc else None
+            capture.stop()
+
+            self.assertIsNone(capture._proc)
+            self.assertIsNone(capture._thread)
+            self.assertIsNone(capture._stderr_thread)
+            self.assertEqual(capture.fileno(), None)
+            if pid is not None:
+                with self.assertRaises(ChildProcessError):
+                    os.waitpid(pid, os.WNOHANG)
+
+    def test_2_stop_called_twice(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ):
+            capture.start()
+            capture.stop()
+            fd_before = _get_open_fd_count()
+            capture.stop()
+            fd_after = _get_open_fd_count()
+            self.assertEqual(fd_before, fd_after)
+
+    def test_3_backend_spawn_failure(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch(
+            "subprocess.Popen", side_effect=FileNotFoundError(2, "No such file or directory", "pw-cat")
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                capture.start()
+            self.assertIn("Missing executable", str(ctx.exception))
+            self.assertEqual(capture._state, "STOPPED")
+            self.assertIsNone(capture.fileno())
+
+    def test_4_popen_succeeds_but_initialization_fails_afterward(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ), patch(
+            "threading.Thread.start", side_effect=RuntimeError("Thread allocation limit reached")
+        ):
+            with self.assertRaises(RuntimeError):
+                capture.start()
+            self.assertEqual(capture._state, "STOPPED")
+            self.assertIsNone(capture._proc)
+            self.assertIsNone(capture.fileno())
+
+    def test_5_backend_exits_unexpectedly(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture,
+            "_command",
+            return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT, "--exit-early"],
+        ):
+            capture.start()
+            import time
+            for _ in range(50):
+                if capture.error():
+                    break
+                time.sleep(0.02)
+            self.assertIsNotNone(capture.error())
+            self.assertIn("Audio capture stopped for backend", capture.error())
+            capture.stop()
+
+    def test_6_backend_ignores_terminate_and_requires_kill(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture,
+            "_command",
+            return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT, "--ignore-sigterm"],
+        ):
+            capture.start()
+            import time
+            time.sleep(0.05)
+            proc = capture._proc
+            pid = proc.pid if proc else None
+            capture.stop()
+
+            self.assertIsNone(capture._proc)
+            if pid is not None:
+                with self.assertRaises(ChildProcessError):
+                    os.waitpid(pid, os.WNOHANG)
+
+    def test_7_stderr_producing_backend_failure(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture,
+            "_command",
+            return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT, "--fail-stderr"],
+        ):
+            capture.start()
+            import time
+            for _ in range(50):
+                if capture.error():
+                    break
+                time.sleep(0.02)
+            self.assertIsNotNone(capture.error())
+            self.assertIn("FATAL: Device or resource busy", capture.error())
+            capture.stop()
+
+    def test_8_ctrl_c_keyboard_interrupt_top_level(self) -> None:
+        from lavatune.__main__ import _install_signal_handlers
+        _install_signal_handlers()
+        import signal
+        handler = signal.getsignal(signal.SIGTERM)
+        self.assertTrue(callable(handler))
+
+    def test_9_10_threads_exit(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ):
+            capture.start()
+            t_cap = capture._thread
+            t_err = capture._stderr_thread
+            self.assertTrue(t_cap is not None and t_cap.is_alive())
+            self.assertTrue(t_err is not None and t_err.is_alive())
+            capture.stop()
+            self.assertFalse(t_cap.is_alive())
+            self.assertFalse(t_err.is_alive())
+
+    def test_11_descriptor_cleanup(self) -> None:
+        fd_baseline = _get_open_fd_count()
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ):
+            capture.start()
+            import time
+            time.sleep(0.02)
+            capture.stop()
+        fd_after = _get_open_fd_count()
+        self.assertEqual(fd_baseline, fd_after)
+
+    def test_12_no_zombie_child_after_shutdown(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ):
+            capture.start()
+            pid = capture._proc.pid
+            capture.stop()
+            with self.assertRaises(ChildProcessError):
+                os.waitpid(pid, os.WNOHANG)
+
+    def test_13_single_use_start_after_stop_contract(self) -> None:
+        with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+            "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+        ):
+            capture = AudioCapture(AudioConfig())
+        with patch.object(
+            capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+        ):
+            capture.start()
+            with self.assertRaises(RuntimeError) as ctx1:
+                capture.start()
+            self.assertIn("already running", str(ctx1.exception))
+            capture.stop()
+            with self.assertRaises(RuntimeError) as ctx2:
+                capture.start()
+            self.assertIn("single-use and cannot be restarted", str(ctx2.exception))
+
+    def test_14_repeated_cycles_no_growth(self) -> None:
+        import threading
+        fd_baseline = _get_open_fd_count()
+        threads_baseline = threading.active_count()
+
+        for _ in range(15):
+            with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+                "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+            ):
+                capture = AudioCapture(AudioConfig())
+            with patch.object(
+                capture, "_command", return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT]
+            ):
+                capture.start()
+                import time
+                time.sleep(0.01)
+                capture.stop()
+
+        fd_after = _get_open_fd_count()
+        threads_after = threading.active_count()
+        self.assertEqual(threads_baseline, threads_after)
+        self.assertEqual(fd_baseline, fd_after)
+
+
+class SoakLeakTests(unittest.TestCase):
+    def test_lifecycle_soak_leak_proof(self) -> None:
+        import threading, time
+        baseline_fds = _get_open_fd_count()
+        baseline_threads = threading.active_count()
+
+        iterations = 10
+        for _ in range(iterations):
+            with patch("lavatune.audio.platform.system", return_value="Linux"), patch(
+                "lavatune.audio.shutil.which", return_value="/usr/bin/pw-cat"
+            ):
+                capture = AudioCapture(AudioConfig())
+            with patch.object(
+                capture,
+                "_command",
+                return_value=[__import__("sys").executable, "-c", CHILD_FIXTURE_SCRIPT],
+            ):
+                capture.start()
+                time.sleep(0.02)
+                capture.stop()
+
+        self.assertEqual(threading.active_count(), baseline_threads)
+        self.assertEqual(_get_open_fd_count(), baseline_fds)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -51,7 +51,10 @@ class AudioCapture:
         self.config = config
         self._frames: deque[CapturedAudioFrame] = deque(maxlen=8)
         self._lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
         self._stop = threading.Event()
+        self._state = "CREATED"
+        self._stopped_cleaned = False
         self._thread: threading.Thread | None = None
         self._stderr_thread: threading.Thread | None = None
         self._proc: subprocess.Popen[bytes] | None = None
@@ -69,10 +72,23 @@ class AudioCapture:
         self._sequence = 0
         self._analysis_seconds = 0.0
         self._analysis_frames = 0
-        self._notify_read, self._notify_write = os.pipe()
-        for descriptor in (self._notify_read, self._notify_write):
-            os.set_blocking(descriptor, False)
-            os.set_inheritable(descriptor, False)
+        self._notify_read = -1
+        self._notify_write = -1
+        try:
+            r, w = os.pipe()
+            for descriptor in (r, w):
+                os.set_blocking(descriptor, False)
+                os.set_inheritable(descriptor, False)
+            self._notify_read, self._notify_write = r, w
+        except Exception:
+            self.stop()
+            raise
+
+    def __del__(self) -> None:
+        try:
+            self.stop()
+        except Exception:
+            pass
 
     def status(self) -> str:
         return sanitize_display_text(
@@ -80,18 +96,23 @@ class AudioCapture:
         )
 
     def error(self) -> str | None:
-        return self._error
+        with self._lock:
+            return self._error
 
     def frames_received(self) -> int:
         with self._lock:
             return len(self._frames)
 
-    def fileno(self) -> int:
-        return self._notify_read
+    def fileno(self) -> int | None:
+        notify_read = getattr(self, "_notify_read", -1)
+        return notify_read if notify_read >= 0 else None
 
     def consume_signal(self) -> None:
+        notify_read = getattr(self, "_notify_read", -1)
+        if notify_read < 0:
+            return
         try:
-            while os.read(self._notify_read, 256):
+            while os.read(notify_read, 256):
                 pass
         except (BlockingIOError, OSError):
             pass
@@ -110,36 +131,88 @@ class AudioCapture:
             self._frames.append(CapturedAudioFrame(self._sequence, frame))
             self._analysis_frames += 1
             self._analysis_seconds += analysis_seconds
-        try:
-            os.write(self._notify_write, b"\0")
-        except (BlockingIOError, OSError):
-            pass
+        notify_write = getattr(self, "_notify_write", -1)
+        if notify_write >= 0:
+            try:
+                os.write(notify_write, b"\0")
+            except (BlockingIOError, OSError):
+                pass
 
     def start(self) -> None:
-        if self._thread is not None:
-            return
-        self._spawn_process()
-        self._stderr_thread = threading.Thread(
-            target=self._drain_stderr,
-            name="lavatune-audio-stderr",
-            daemon=True,
-        )
-        self._stderr_thread.start()
-        self._thread = threading.Thread(target=self._run, name="lavatune-audio", daemon=True)
-        self._thread.start()
+        lifecycle_lock = getattr(self, "_lifecycle_lock", None)
+        if lifecycle_lock is None:
+            lifecycle_lock = threading.Lock()
+            self._lifecycle_lock = lifecycle_lock
+
+        with lifecycle_lock:
+            state = getattr(self, "_state", "CREATED")
+            if state == "RUNNING":
+                raise RuntimeError("AudioCapture is already running.")
+            if state == "STOPPED":
+                raise RuntimeError("AudioCapture is single-use and cannot be restarted.")
+
+            try:
+                self._spawn_process()
+                self._stderr_thread = threading.Thread(
+                    target=self._drain_stderr,
+                    name="lavatune-audio-stderr",
+                    daemon=True,
+                )
+                self._stderr_thread.start()
+                self._thread = threading.Thread(
+                    target=self._run,
+                    name="lavatune-audio",
+                    daemon=True,
+                )
+                self._thread.start()
+                self._state = "RUNNING"
+            except Exception:
+                self._state = "STOPPED"
+                self._stop_unlocked()
+                raise
 
     def stop(self) -> None:
-        self._stop.set()
+        lifecycle_lock = getattr(self, "_lifecycle_lock", None)
+        if lifecycle_lock is None:
+            lifecycle_lock = threading.Lock()
+            self._lifecycle_lock = lifecycle_lock
+
+        with lifecycle_lock:
+            self._stop_unlocked()
+
+    def _stop_unlocked(self) -> None:
+        if getattr(self, "_state", "CREATED") == "STOPPED" and getattr(self, "_stopped_cleaned", False):
+            return
+        self._state = "STOPPED"
+        if hasattr(self, "_stop"):
+            self._stop.set()
+
         self._terminate_process()
-        if self._thread is not None:
-            self._thread.join(timeout=0.75)
-        if self._stderr_thread is not None:
-            self._stderr_thread.join(timeout=0.25)
-        for descriptor in (self._notify_read, self._notify_write):
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+
+        if getattr(self, "_thread", None) is not None:
+            if self._thread.is_alive():
+                self._thread.join(timeout=1.0)
+                if self._thread.is_alive():
+                    raise RuntimeError("AudioCapture capture thread failed to terminate.")
+            self._thread = None
+
+        if getattr(self, "_stderr_thread", None) is not None:
+            if self._stderr_thread.is_alive():
+                self._stderr_thread.join(timeout=1.0)
+                if self._stderr_thread.is_alive():
+                    raise RuntimeError("AudioCapture stderr thread failed to terminate.")
+            self._stderr_thread = None
+
+        for attr in ("_notify_read", "_notify_write"):
+            fd = getattr(self, attr, -1)
+            if fd is not None and fd >= 0:
+                setattr(self, attr, -1)
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+        self._stopped_cleaned = True
 
     def latest(self) -> AudioFrame:
         with self._lock:
@@ -237,30 +310,67 @@ class AudioCapture:
             raise RuntimeError("Audio capture stdout was not available")
 
     def _drain_stderr(self) -> None:
-        if self._proc is None or self._proc.stderr is None:
+        proc = getattr(self, "_proc", None)
+        if proc is None or proc.stderr is None:
             return
-        # Backends can be noisy. Drain continuously so their pipe cannot block
-        # capture, but retain only enough tail text to explain a failure.
-        while chunk := self._proc.stderr.read(512):
-            self._stderr_tail.extend(chunk)
-            if len(self._stderr_tail) > 2048:
-                del self._stderr_tail[:-2048]
+        try:
+            while not self._stop.is_set():
+                chunk = proc.stderr.read(512)
+                if not chunk:
+                    break
+                with self._lock:
+                    self._stderr_tail.extend(chunk)
+                    if len(self._stderr_tail) > 2048:
+                        del self._stderr_tail[:-2048]
+        except (OSError, ValueError):
+            pass
 
     def _backend_message(self) -> str:
-        decoded = bytes(self._stderr_tail).decode("utf-8", errors="replace")
+        lock = getattr(self, "_lock", None)
+        if lock is not None:
+            with lock:
+                decoded = bytes(self._stderr_tail).decode("utf-8", errors="replace")
+        else:
+            decoded = bytes(self._stderr_tail).decode("utf-8", errors="replace")
         return sanitize_display_text(decoded, max_chars=512)
 
-    def _terminate_process(self) -> None:
-        process = self._proc
+    def _close_process_pipes(self, process: object | None) -> None:
         if process is None:
             return
-        if process.poll() is None:
-            process.terminate()
+        stdout = getattr(process, "stdout", None)
+        stderr = getattr(process, "stderr", None)
+        for pipe in (stdout, stderr):
+            if pipe is not None and not getattr(pipe, "closed", True):
+                try:
+                    pipe.close()
+                except OSError:
+                    pass
+
+    def _terminate_process(self) -> None:
+        process = getattr(self, "_proc", None)
+        if process is None:
+            return
         try:
-            process.wait(timeout=0.5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait(timeout=0.5)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    try:
+                        process.wait(timeout=0.5)
+                    except (subprocess.TimeoutExpired, OSError):
+                        pass
+            else:
+                try:
+                    process.wait(timeout=0.1)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+        except OSError:
+            pass
+        finally:
+            self._close_process_pipes(process)
+            self._proc = None
 
     def _command(self) -> list[str]:
         rate = str(self.config.sample_rate)
@@ -329,47 +439,67 @@ class AudioCapture:
         raise RuntimeError(f"Unsupported backend '{self.backend}'")
 
     def _run(self) -> None:
-        if self._proc is None or self._proc.stdout is None:
-            self._error = "Audio capture was not initialized."
+        proc = getattr(self, "_proc", None)
+        if proc is None or proc.stdout is None:
+            with self._lock:
+                self._error = "Audio capture was not initialized."
             return
 
         bytes_per_frame = self.config.frame_size * self.config.channels * 2
         while not self._stop.is_set():
-            chunk = self._proc.stdout.read(bytes_per_frame)
+            try:
+                chunk = proc.stdout.read(bytes_per_frame)
+            except (OSError, ValueError):
+                chunk = b""
+
             if not chunk:
-                if self._proc.poll() is not None:
-                    if not self._stop.is_set():
-                        if self._stderr_thread is not None:
-                            self._stderr_thread.join(timeout=0.05)
-                        stderr = self._backend_message()
-                        detail = f" Backend message: {stderr}" if stderr else ""
-                        permission_hint = ""
-                        if platform.system() == "Darwin" and any(
-                            kw in stderr.lower() for kw in ("permission", "avfoundation", "denied", "not permitted")
-                        ):
-                            permission_hint = (
-                                " Note: Check terminal audio permissions in macOS System Settings > "
-                                "Privacy & Security > Microphone."
-                            )
+                if not self._stop.is_set():
+                    if self._stderr_thread is not None and self._stderr_thread.is_alive():
+                        self._stderr_thread.join(timeout=0.25)
+
+                    if proc.poll() is None:
+                        try:
+                            proc.wait(timeout=0.25)
+                        except subprocess.TimeoutExpired:
+                            pass
+
+                    stderr = self._backend_message()
+                    detail = f" Backend message: {stderr}" if stderr else ""
+                    permission_hint = ""
+                    if platform.system() == "Darwin" and any(
+                        kw in stderr.lower()
+                        for kw in ("permission", "avfoundation", "denied", "not permitted")
+                    ):
+                        permission_hint = (
+                            " Note: Check terminal audio permissions in macOS System Settings > "
+                            "Privacy & Security > Microphone."
+                        )
+                    with self._lock:
                         self._error = (
                             f"Audio capture stopped for backend '{self.backend}' using "
                             f"source '{sanitize_display_text(str(self.source))}'. "
                             f"Try setting --source explicitly or "
                             f"switching --backend.{permission_hint}{detail}"
                         )
-                    break
-                time.sleep(0.01)
-                continue
+                break
 
             started = time.perf_counter()
             frame = self._analyze(chunk)
             elapsed = time.perf_counter() - started
             self._publish(frame, elapsed)
 
-        if self._proc.poll() is None:
+        if proc.poll() is None:
             self._terminate_process()
+        else:
+            try:
+                proc.wait(timeout=0.1)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+            self._close_process_pipes(proc)
 
     def _analyze(self, chunk: bytes) -> AudioFrame:
+        if len(chunk) % 2 != 0:
+            chunk = chunk[: len(chunk) - (len(chunk) % 2)]
         sample_count = len(chunk) // 2
         if sample_count == 0:
             return AudioFrame(
