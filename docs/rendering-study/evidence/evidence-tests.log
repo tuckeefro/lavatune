@@ -1,0 +1,16 @@
+test_complete_alternating_design_is_accepted (test_evidence.DesignContractTests.test_complete_alternating_design_is_accepted) ... ok
+test_database_rejects_duplicate_keys (test_evidence.DesignContractTests.test_database_rejects_duplicate_keys) ... ok
+test_database_rejects_invalid_method_and_dimensions (test_evidence.DesignContractTests.test_database_rejects_invalid_method_and_dimensions) ... ok
+test_duplicate_observation_is_rejected (test_evidence.DesignContractTests.test_duplicate_observation_is_rejected) ... ok
+test_missing_pair_is_rejected (test_evidence.DesignContractTests.test_missing_pair_is_rejected) ... ok
+test_nonfinite_and_nonpositive_timings_are_rejected (test_evidence.DesignContractTests.test_nonfinite_and_nonpositive_timings_are_rejected) ... ok
+test_wrong_execution_order_is_rejected (test_evidence.DesignContractTests.test_wrong_execution_order_is_rejected) ... ok
+test_wrong_source_or_input_length_is_rejected (test_evidence.DesignContractTests.test_wrong_source_or_input_length_is_rejected) ... ok
+test_database_roundtrip_matches_csv_and_means (test_evidence.RetainedEvidenceTests.test_database_roundtrip_matches_csv_and_means) ... ok
+test_raw_csv_has_all_thirty_declared_observations (test_evidence.RetainedEvidenceTests.test_raw_csv_has_all_thirty_declared_observations) ... ok
+test_summary_matches_raw_data_and_hash (test_evidence.RetainedEvidenceTests.test_summary_matches_raw_data_and_hash) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.004s
+
+OK

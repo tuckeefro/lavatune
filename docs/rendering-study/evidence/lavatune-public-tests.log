@@ -1,0 +1,350 @@
+Analyzing live motion for 5 seconds. Start playback now.
+Tracing live audio for 5 seconds. Start playback now.
+test_atlas_single_pass_analysis_retains_coarse_tonal_contrast (test_audio.AudioProcessTests.test_atlas_single_pass_analysis_retains_coarse_tonal_contrast) ... ok
+test_backend_binary_mapping_matches_public_backend_names (test_audio.AudioProcessTests.test_backend_binary_mapping_matches_public_backend_names) ... ok
+test_backend_status_and_diagnostics_are_sanitized (test_audio.AudioProcessTests.test_backend_status_and_diagnostics_are_sanitized) ... ok
+test_capture_queue_is_bounded_sequenced_and_wakes_a_waiter (test_audio.AudioProcessTests.test_capture_queue_is_bounded_sequenced_and_wakes_a_waiter) ... ok
+test_darwin_microphone_rejects_linux_only_explicit_backends (test_audio.AudioProcessTests.test_darwin_microphone_rejects_linux_only_explicit_backends) ... ok
+test_darwin_microphone_route_resolves_ffmpeg_source (test_audio.AudioProcessTests.test_darwin_microphone_route_resolves_ffmpeg_source) ... ok
+test_darwin_system_route_raises_runtime_error (test_audio.AudioProcessTests.test_darwin_system_route_raises_runtime_error) ... ok
+test_explicit_source_overrides_microphone_route (test_audio.AudioProcessTests.test_explicit_source_overrides_microphone_route) ... ok
+test_linux_microphone_route_uses_backend_default_input (test_audio.AudioProcessTests.test_linux_microphone_route_uses_backend_default_input) ... ok
+test_linux_system_auto_does_not_fall_back_to_sox (test_audio.AudioProcessTests.test_linux_system_auto_does_not_fall_back_to_sox) ... ok
+test_source_is_one_subprocess_argument (test_audio.AudioProcessTests.test_source_is_one_subprocess_argument) ... ok
+test_sox_backend_microphone_route_resolves_default_source (test_audio.AudioProcessTests.test_sox_backend_microphone_route_resolves_default_source) ... ok
+test_sox_backend_system_route_raises_runtime_error (test_audio.AudioProcessTests.test_sox_backend_system_route_raises_runtime_error) ... ok
+test_stubborn_backend_is_killed_and_reaped (test_audio.AudioProcessTests.test_stubborn_backend_is_killed_and_reaped) ... ok
+test_canvas_can_consume_the_renderer_neutral_presentation_frame (test_canvas.CanvasProjectionTests.test_canvas_can_consume_the_renderer_neutral_presentation_frame) ... ok
+test_canvas_projection_uses_two_fixed_local_surfaces (test_canvas.CanvasProjectionTests.test_canvas_projection_uses_two_fixed_local_surfaces) ... ok
+test_canvas_spike_extends_toward_the_impact (test_canvas.CanvasProjectionTests.test_canvas_spike_extends_toward_the_impact) ... ok
+test_audio_probe_option_is_reserved_for_doctor (test_cli.CliTests.test_audio_probe_option_is_reserved_for_doctor) ... ok
+test_canvas_renderer_and_one_shot_trace_are_incompatible (test_cli.CliTests.test_canvas_renderer_and_one_shot_trace_are_incompatible) ... ok
+test_kitty_renderer_and_trace_once_are_incompatible (test_cli.CliTests.test_kitty_renderer_and_trace_once_are_incompatible) ... ok
+test_list_backends_includes_sox (test_cli.CliTests.test_list_backends_includes_sox) ... ok
+test_main_list_backends_outputs_sox (test_cli.CliTests.test_main_list_backends_outputs_sox) ... ok
+test_renderer_canvas_routes_to_the_opt_in_companion (test_cli.CliTests.test_renderer_canvas_routes_to_the_opt_in_companion) ... ok
+test_renderer_kitty_routes_to_terminal_pixel_companion (test_cli.CliTests.test_renderer_kitty_routes_to_terminal_pixel_companion) ... ok
+test_trace_output_requires_a_one_shot_trace (test_cli.CliTests.test_trace_output_requires_a_one_shot_trace) ... ok
+test_version_comes_from_package_version (test_cli.CliTests.test_version_comes_from_package_version) ... ok
+test_window_and_canvas_flags_cannot_be_combined (test_cli.CliTests.test_window_and_canvas_flags_cannot_be_combined) ... ok
+test_window_flag_routes_to_standalone_window (test_cli.CliTests.test_window_flag_routes_to_standalone_window) ... ok
+test_window_renderer_and_trace_once_are_incompatible (test_cli.CliTests.test_window_renderer_and_trace_once_are_incompatible) ... ok
+test_builtin_themes_resolve_to_renderable_values (test_config.ConfigTests.test_builtin_themes_resolve_to_renderable_values) ... ok
+test_dock_adjustment_debounces_into_saved_preferences (test_config.ConfigTests.test_dock_adjustment_debounces_into_saved_preferences) ... ok
+test_explicit_config_mode_disables_preference_writes (test_config.ConfigTests.test_explicit_config_mode_disables_preference_writes) ... ok
+test_explicit_config_overrides_saved_preferences (test_config.ConfigTests.test_explicit_config_overrides_saved_preferences) ... ok
+test_key_controls_and_presets_apply_and_mark_dirty (test_config.ConfigTests.test_key_controls_and_presets_apply_and_mark_dirty) ... ok
+test_legacy_content_mode_migrates_to_a_listening_context (test_config.ConfigTests.test_legacy_content_mode_migrates_to_a_listening_context) ... ok
+test_legacy_glyph_config_defaults_to_text_material (test_config.ConfigTests.test_legacy_glyph_config_defaults_to_text_material) ... ok
+test_preferences_round_trip_semantic_controls_with_private_permissions (test_config.ConfigTests.test_preferences_round_trip_semantic_controls_with_private_permissions) ... ok
+test_soft_afterglow_is_the_default_theme (test_config.ConfigTests.test_soft_afterglow_is_the_default_theme) ... ok
+test_unknown_preference_schema_fails_with_a_bounded_config_error (test_config.ConfigTests.test_unknown_preference_schema_fails_with_a_bounded_config_error) ... ok
+test_warm_braille_theme_name_remains_compatible (test_config.ConfigTests.test_warm_braille_theme_name_remains_compatible) ... ok
+test_darwin_microphone_route_doctor_passes_when_pcm_received (test_doctor.DoctorTests.test_darwin_microphone_route_doctor_passes_when_pcm_received) ... ok
+test_darwin_system_route_doctor_warns_and_errors_on_probe (test_doctor.DoctorTests.test_darwin_system_route_doctor_warns_and_errors_on_probe) ... ok
+test_healthy_environment_and_live_probe_pass (test_doctor.DoctorTests.test_healthy_environment_and_live_probe_pass) ... ok
+test_missing_audio_frames_are_reported_as_error (test_doctor.DoctorTests.test_missing_audio_frames_are_reported_as_error) ... ok
+test_missing_optional_and_required_tools_are_distinguished (test_doctor.DoctorTests.test_missing_optional_and_required_tools_are_distinguished) ... ok
+test_static_doctor_marks_audio_probe_as_skipped (test_doctor.DoctorTests.test_static_doctor_marks_audio_probe_as_skipped) ... ok
+test_unsupported_environment_reports_skipped_audio_probe (test_doctor.DoctorTests.test_unsupported_environment_reports_skipped_audio_probe) ... ok
+test_protocol_writer_fills_grid_without_moving_terminal_cursor (test_kitty.KittyRendererTests.test_protocol_writer_fills_grid_without_moving_terminal_cursor) ... ok
+test_render_size_preserves_the_physical_terminal_grid_aspect (test_kitty.KittyRendererTests.test_render_size_preserves_the_physical_terminal_grid_aspect) ... ok
+test_renderer_maps_the_complete_wax_domain_across_the_framebuffer (test_kitty.KittyRendererTests.test_renderer_maps_the_complete_wax_domain_across_the_framebuffer) ... ok
+test_renderer_produces_truecolor_pixels_from_conserved_wax (test_kitty.KittyRendererTests.test_renderer_produces_truecolor_pixels_from_conserved_wax) ... ok
+test_renderer_smoothing_does_not_mutate_wax_state (test_kitty.KittyRendererTests.test_renderer_smoothing_does_not_mutate_wax_state) ... ok
+test_terminal_detection_is_explicit_and_forceable (test_kitty.KittyRendererTests.test_terminal_detection_is_explicit_and_forceable) ... ok
+test_xtwinops_cell_size_response_is_parsed_in_width_height_order (test_kitty.KittyRendererTests.test_xtwinops_cell_size_response_is_parsed_in_width_height_order) ... ok
+test_dark_room_background_has_strong_wax_contrast (test_kitty_v2.PhotographicWaxRendererTests.test_dark_room_background_has_strong_wax_contrast) ... ok
+test_renderer_produces_rgb_without_mutating_wax (test_kitty_v2.PhotographicWaxRendererTests.test_renderer_produces_rgb_without_mutating_wax) ... ok
+test_spatial_reconstruction_is_renderer_only (test_kitty_v2.PhotographicWaxRendererTests.test_spatial_reconstruction_is_renderer_only) ... ok
+test_standalone_launcher_uses_current_config_signature (test_kitty_v2.PhotographicWaxRendererTests.test_standalone_launcher_uses_current_config_signature) ... ok
+test_temporal_reconstruction_changes_display_history_not_wax (test_kitty_v2.PhotographicWaxRendererTests.test_temporal_reconstruction_changes_display_history_not_wax) ... ok
+test_activity_driven_cadence_spends_frames_only_when_needed (test_layout.LayoutTests.test_activity_driven_cadence_spends_frames_only_when_needed) ... ok
+test_codexdeck_environment_setting_remains_compatible (test_layout.LayoutTests.test_codexdeck_environment_setting_remains_compatible) ... ok
+test_compact_cell_width_autoscales_to_tile_area (test_layout.LayoutTests.test_compact_cell_width_autoscales_to_tile_area) ... ok
+test_compact_side_layout_uses_available_tile_and_keeps_dock_adjacent (test_layout.LayoutTests.test_compact_side_layout_uses_available_tile_and_keeps_dock_adjacent) ... ok
+test_confirmed_snap_starts_one_bounded_burst (test_layout.LayoutTests.test_confirmed_snap_starts_one_bounded_burst) ... ok
+test_controls_start_backstage (test_layout.LayoutTests.test_controls_start_backstage) ... ok
+test_dirty_cell_runs_skip_unchanged_terminal_content (test_layout.LayoutTests.test_dirty_cell_runs_skip_unchanged_terminal_content) ... ok
+test_explicit_visual_limits_still_clamp_visual_and_dock_width (test_layout.LayoutTests.test_explicit_visual_limits_still_clamp_visual_and_dock_width) ... ok
+test_faster_audio_cadence_can_wake_a_quiet_deadline (test_layout.LayoutTests.test_faster_audio_cadence_can_wake_a_quiet_deadline) ... ok
+test_generic_environment_setting_controls_target_density (test_layout.LayoutTests.test_generic_environment_setting_controls_target_density) ... ok
+test_mapped_gesture_keeps_afterglow_at_an_active_cadence (test_layout.LayoutTests.test_mapped_gesture_keeps_afterglow_at_an_active_cadence) ... ok
+test_palette_initialization_respects_terminal_pair_capacity (test_layout.LayoutTests.test_palette_initialization_respects_terminal_pair_capacity) ... ok
+test_regular_layout_still_uses_available_terminal (test_layout.LayoutTests.test_regular_layout_still_uses_available_terminal) ... ok
+test_scheduler_holds_engaged_state_after_a_short_burst (test_layout.LayoutTests.test_scheduler_holds_engaged_state_after_a_short_burst) ... ok
+test_scheduler_treats_rapid_pattern_density_as_a_short_burst (test_layout.LayoutTests.test_scheduler_treats_rapid_pattern_density_as_a_short_burst) ... ok
+test_short_hidden_dock_tile_uses_every_available_row (test_layout.LayoutTests.test_short_hidden_dock_tile_uses_every_available_row) ... ok
+test_short_open_dock_collapses_to_preserve_visual (test_layout.LayoutTests.test_short_open_dock_collapses_to_preserve_visual) ... ok
+test_sparse_runs_clear_old_contours_without_scanning_blank_rows (test_layout.LayoutTests.test_sparse_runs_clear_old_contours_without_scanning_blank_rows) ... ok
+test_sustained_release_does_not_extend_burst_forever (test_layout.LayoutTests.test_sustained_release_does_not_extend_burst_forever) ... ok
+test_custom_ramp_rejects_controls_combining_and_wide_characters (test_materials.GlyphRampTests.test_custom_ramp_rejects_controls_combining_and_wide_characters) ... ok
+test_invalid_ramp_falls_back_to_canonical_text_material (test_materials.GlyphRampTests.test_invalid_ramp_falls_back_to_canonical_text_material) ... ok
+test_contour_depth_projects_near_bodies_larger_and_brighter (test_materials.MaterialTests.test_contour_depth_projects_near_bodies_larger_and_brighter) ... ok
+test_contour_fluid_carries_a_hit_as_a_bounded_travelling_surface_wave (test_materials.MaterialTests.test_contour_fluid_carries_a_hit_as_a_bounded_travelling_surface_wave) ... ok
+test_contour_fluid_keeps_afterglow_local_to_the_impacted_edge (test_materials.MaterialTests.test_contour_fluid_keeps_afterglow_local_to_the_impacted_edge) ... ok
+test_contour_fluid_keeps_each_row_connected_instead_of_cloudy (test_materials.MaterialTests.test_contour_fluid_keeps_each_row_connected_instead_of_cloudy) ... ok
+test_contour_fluid_turns_a_fast_change_into_a_local_spike (test_materials.MaterialTests.test_contour_fluid_turns_a_fast_change_into_a_local_spike) ... ok
+test_contour_fluid_uses_audio_to_reshape_instead_of_only_recolor (test_materials.MaterialTests.test_contour_fluid_uses_audio_to_reshape_instead_of_only_recolor) ... ok
+test_contour_spans_are_sparse_cached_and_expand_to_the_snapshot_api (test_materials.MaterialTests.test_contour_spans_are_sparse_cached_and_expand_to_the_snapshot_api) ... ok
+test_contour_spin_changes_its_outline_and_surface_faces (test_materials.MaterialTests.test_contour_spin_changes_its_outline_and_surface_faces) ... ok
+test_fluid_edges_use_less_than_a_full_terminal_cell (test_materials.MaterialTests.test_fluid_edges_use_less_than_a_full_terminal_cell) ... ok
+test_fluid_material_falls_back_to_text_without_unicode (test_materials.MaterialTests.test_fluid_material_falls_back_to_text_without_unicode) ... ok
+test_fluid_material_reserves_solid_cells_for_the_core (test_materials.MaterialTests.test_fluid_material_reserves_solid_cells_for_the_core) ... ok
+test_materials_facade_reexports_the_extracted_renderers (test_materials.MaterialTests.test_materials_facade_reexports_the_extracted_renderers) ... ok
+test_semantic_controls_have_orthogonal_visual_effects (test_materials.MaterialTests.test_semantic_controls_have_orthogonal_visual_effects) ... ok
+test_text_material_uses_the_authored_glyph_ramp (test_materials.MaterialTests.test_text_material_uses_the_authored_glyph_ramp) ... ok
+test_text_row_renderer_interpolates_without_repeating_source_columns (test_materials.MaterialTests.test_text_row_renderer_interpolates_without_repeating_source_columns) ... ok
+test_volume_defined_edge_sharpens_only_existing_quadrant_boundaries (test_materials.MaterialTests.test_volume_defined_edge_sharpens_only_existing_quadrant_boundaries) ... ok
+test_volume_flip_moves_an_asymmetric_lobe_behind_the_main_body (test_materials.MaterialTests.test_volume_flip_moves_an_asymmetric_lobe_behind_the_main_body) ... ok
+test_volume_keeps_solid_quadrant_cells_for_fluid_mass (test_materials.MaterialTests.test_volume_keeps_solid_quadrant_cells_for_fluid_mass) ... ok
+test_volume_keeps_the_first_four_organisms_visually_distinct (test_materials.MaterialTests.test_volume_keeps_the_first_four_organisms_visually_distinct) ... ok
+test_volume_music_forces_change_the_projected_shape (test_materials.MaterialTests.test_volume_music_forces_change_the_projected_shape) ... ok
+test_volume_organic_contour_has_stable_individual_asymmetry (test_materials.MaterialTests.test_volume_organic_contour_has_stable_individual_asymmetry) ... ok
+test_volume_roles_keep_iconic_core_proportions (test_materials.MaterialTests.test_volume_roles_keep_iconic_core_proportions) ... ok
+test_volume_spike_aims_the_existing_lobe_in_the_impact_direction (test_materials.MaterialTests.test_volume_spike_aims_the_existing_lobe_in_the_impact_direction) ... ok
+test_volume_thermal_bridge_redirects_the_existing_lobe_without_new_glyphs (test_materials.MaterialTests.test_volume_thermal_bridge_redirects_the_existing_lobe_without_new_glyphs) ... ok
+test_volume_warm_near_body_leads_without_spending_attention_color (test_materials.MaterialTests.test_volume_warm_near_body_leads_without_spending_attention_color) ... ok
+test_wax_connected_mass_projects_as_a_round_body_not_a_density_wedge (test_materials.MaterialTests.test_wax_connected_mass_projects_as_a_round_body_not_a_density_wedge) ... ok
+test_wax_material_renders_fixed_density_as_solid_quadrant_wax (test_materials.MaterialTests.test_wax_material_renders_fixed_density_as_solid_quadrant_wax) ... ok
+test_metadata_fields_are_bounded (test_media.MediaTests.test_metadata_fields_are_bounded) ... ok
+test_metadata_strips_terminal_and_bidi_controls (test_media.MediaTests.test_metadata_strips_terminal_and_bidi_controls) ... ok
+test_paused_state_is_visible (test_media.MediaTests.test_paused_state_is_visible) ... ok
+test_playing_youtube_wins_over_paused_player (test_media.MediaTests.test_playing_youtube_wins_over_paused_player) ... ok
+test_spotify_metadata_uses_track_and_artist (test_media.MediaTests.test_spotify_metadata_uses_track_and_artist) ... ok
+test_affective_state_builds_tension_then_recognizes_release (test_organism.AudioForceTests.test_affective_state_builds_tension_then_recognizes_release) ... ok
+test_already_loud_audio_cannot_prime_a_full_snap (test_organism.AudioForceTests.test_already_loud_audio_cannot_prime_a_full_snap) ... ok
+test_brief_pause_does_not_earn_full_snap_choreography (test_organism.AudioForceTests.test_brief_pause_does_not_earn_full_snap_choreography) ... ok
+test_bright_attack_keeps_rhythm_without_becoming_a_full_body_impact (test_organism.AudioForceTests.test_bright_attack_keeps_rhythm_without_becoming_a_full_body_impact) ... ok
+test_cadence_estimate_distinguishes_slow_and_fast_pulses (test_organism.AudioForceTests.test_cadence_estimate_distinguishes_slow_and_fast_pulses) ... ok
+test_capture_frames_are_mapped_between_lower_cadence_draws (test_organism.AudioForceTests.test_capture_frames_are_mapped_between_lower_cadence_draws) ... ok
+test_frequency_ranges_map_to_distinct_physical_controls (test_organism.AudioForceTests.test_frequency_ranges_map_to_distinct_physical_controls) ... ok
+test_gradual_crescendo_opens_without_false_snap (test_organism.AudioForceTests.test_gradual_crescendo_opens_without_false_snap) ... ok
+test_listening_contexts_map_the_same_forces_to_distinct_behavior (test_organism.AudioForceTests.test_listening_contexts_map_the_same_forces_to_distinct_behavior) ... ok
+test_mapped_quiet_to_loud_frames_preserve_snap_contrast (test_organism.AudioForceTests.test_mapped_quiet_to_loud_frames_preserve_snap_contrast) ... ok
+test_midwest_emo_arc_moves_from_fragile_yearning_to_catharsis (test_organism.AudioForceTests.test_midwest_emo_arc_moves_from_fragile_yearning_to_catharsis) ... ok
+test_organisms_keep_independent_rotational_momentum (test_organism.AudioForceTests.test_organisms_keep_independent_rotational_momentum) ... ok
+test_rapid_subdivisions_drive_density_without_starving_tempo (test_organism.AudioForceTests.test_rapid_subdivisions_drive_density_without_starving_tempo) ... ok
+test_reaction_latch_accumulates_rapid_impulses_between_physics_steps (test_organism.AudioForceTests.test_reaction_latch_accumulates_rapid_impulses_between_physics_steps) ... ok
+test_reaction_latch_keeps_a_deviation_until_physics_consumes_it (test_organism.AudioForceTests.test_reaction_latch_keeps_a_deviation_until_physics_consumes_it) ... ok
+test_reaction_latch_keeps_an_attack_until_a_draw_consumes_it (test_organism.AudioForceTests.test_reaction_latch_keeps_an_attack_until_a_draw_consumes_it) ... ok
+test_restraint_saturates_so_ten_and_long_waits_snap_alike (test_organism.AudioForceTests.test_restraint_saturates_so_ten_and_long_waits_snap_alike) ... ok
+test_shared_posture_keeps_the_acoustic_relationships_bounded (test_organism.AudioForceTests.test_shared_posture_keeps_the_acoustic_relationships_bounded) ... ok
+test_single_notification_after_restraint_stays_a_local_event (test_organism.AudioForceTests.test_single_notification_after_restraint_stays_a_local_event) ... ok
+test_spectral_centroid_distinguishes_low_and_high_tone (test_organism.AudioForceTests.test_spectral_centroid_distinguishes_low_and_high_tone) ... ok
+test_spikes_require_a_band_to_deviate_from_its_recent_average (test_organism.AudioForceTests.test_spikes_require_a_band_to_deviate_from_its_recent_average) ... ok
+test_steady_compressed_audio_does_not_fake_rapid_density (test_organism.AudioForceTests.test_steady_compressed_audio_does_not_fake_rapid_density) ... ok
+test_time_based_mapping_is_consistent_across_capture_cadences (test_organism.AudioForceTests.test_time_based_mapping_is_consistent_across_capture_cadences) ... ok
+test_transient_decays_without_changing_steady_energy (test_organism.AudioForceTests.test_transient_decays_without_changing_steady_energy) ... ok
+test_adaptive_centroid_leaves_middle_motion_free_and_bleeds_outward_momentum (test_organism.CompositionTests.test_adaptive_centroid_leaves_middle_motion_free_and_bleeds_outward_momentum) ... ok
+test_bodies_keep_bounded_independent_depth_motion (test_organism.CompositionTests.test_bodies_keep_bounded_independent_depth_motion) ... ok
+test_body_scale_uses_physical_terminal_dimensions (test_organism.CompositionTests.test_body_scale_uses_physical_terminal_dimensions) ... ok
+test_confirmed_snap_breaks_the_group_open_without_spending_attention (test_organism.CompositionTests.test_confirmed_snap_breaks_the_group_open_without_spending_attention) ... ok
+test_embodied_mirror_contracts_under_tension_and_opens_on_release (test_organism.CompositionTests.test_embodied_mirror_contracts_under_tension_and_opens_on_release) ... ok
+test_fast_change_spikes_then_softens_before_afterglow_fades (test_organism.CompositionTests.test_fast_change_spikes_then_softens_before_afterglow_fades) ... ok
+test_first_four_bodies_keep_authored_identities_and_silhouettes (test_organism.CompositionTests.test_first_four_bodies_keep_authored_identities_and_silhouettes) ... ok
+test_first_viewport_seeds_the_cast_in_its_actual_habitat (test_organism.CompositionTests.test_first_viewport_seeds_the_cast_in_its_actual_habitat) ... ok
+test_fluid_path_does_not_create_volume_scars (test_organism.CompositionTests.test_fluid_path_does_not_create_volume_scars) ... ok
+test_habitats_give_the_same_identities_different_home_regions (test_organism.CompositionTests.test_habitats_give_the_same_identities_different_home_regions) ... ok
+test_lavalamp_planar_force_eases_into_a_new_direction (test_organism.CompositionTests.test_lavalamp_planar_force_eases_into_a_new_direction) ... ok
+test_lavalamp_slows_planar_action_without_suppressing_inner_response (test_organism.CompositionTests.test_lavalamp_slows_planar_action_without_suppressing_inner_response) ... ok
+test_mass_weighted_group_recenters_without_collapsing_body_spacing (test_organism.CompositionTests.test_mass_weighted_group_recenters_without_collapsing_body_spacing) ... ok
+test_midwest_emo_posture_reaches_then_breaks_open (test_organism.CompositionTests.test_midwest_emo_posture_reaches_then_breaks_open) ... ok
+test_motion_cues_split_tempo_float_from_high_tone_chop (test_organism.CompositionTests.test_motion_cues_split_tempo_float_from_high_tone_chop) ... ok
+test_music_stabs_are_separate_from_radio_motion (test_organism.CompositionTests.test_music_stabs_are_separate_from_radio_motion) ... ok
+test_narrative_context_reuses_contraction_and_release_motion (test_organism.CompositionTests.test_narrative_context_reuses_contraction_and_release_motion) ... ok
+test_rapid_density_adds_flutter_without_spending_directional_spikes (test_organism.CompositionTests.test_rapid_density_adds_flutter_without_spending_directional_spikes) ... ok
+test_resize_preserves_body_identity_position_and_momentum (test_organism.CompositionTests.test_resize_preserves_body_identity_position_and_momentum) ... ok
+test_sound_roles_disturb_their_authored_bodies_differently (test_organism.CompositionTests.test_sound_roles_disturb_their_authored_bodies_differently) ... ok
+test_tempo_changes_each_body_and_the_casts_overall_motion (test_organism.CompositionTests.test_tempo_changes_each_body_and_the_casts_overall_motion) ... ok
+test_tile_composition_changes_topology_instead_of_only_scale (test_organism.CompositionTests.test_tile_composition_changes_topology_instead_of_only_scale) ... ok
+test_tile_currents_form_return_lanes_instead_of_waypoint_motion (test_organism.CompositionTests.test_tile_currents_form_return_lanes_instead_of_waypoint_motion) ... ok
+test_transient_pressure_crosses_the_tile_and_recovers (test_organism.CompositionTests.test_transient_pressure_crosses_the_tile_and_recovers) ... ok
+test_transient_selects_one_body_and_leaves_a_decaying_afterglow (test_organism.CompositionTests.test_transient_selects_one_body_and_leaves_a_decaying_afterglow) ... ok
+test_volume_posture_embodies_group_space_and_independent_roles (test_organism.CompositionTests.test_volume_posture_embodies_group_space_and_independent_roles) ... ok
+test_volume_scars_persist_until_a_new_stable_pattern_earns_recovery (test_organism.CompositionTests.test_volume_scars_persist_until_a_new_stable_pattern_earns_recovery) ... ok
+test_volume_scars_require_a_credible_rupture_not_any_interruption (test_organism.CompositionTests.test_volume_scars_require_a_credible_rupture_not_any_interruption) ... ok
+test_wall_contact_squashes_on_the_contact_axis (test_organism.CompositionTests.test_wall_contact_squashes_on_the_contact_axis) ... ok
+test_wide_current_returns_as_a_group_after_sustained_edge_dwell (test_organism.CompositionTests.test_wide_current_returns_as_a_group_after_sustained_edge_dwell) ... ok
+test_hit_injects_a_surface_wave_that_coasts_without_moving_the_cast (test_organism.FluidSurfaceRippleTests.test_hit_injects_a_surface_wave_that_coasts_without_moving_the_cast) ... ok
+test_dense_peak_enters_overdrive_without_a_cadence_break (test_organism.NarrativeTests.test_dense_peak_enters_overdrive_without_a_cadence_break) ... ok
+test_expectation_gives_the_same_surprise_more_context (test_organism.NarrativeTests.test_expectation_gives_the_same_surprise_more_context) ... ok
+test_phrase_memory_turns_held_cadence_into_rupture_then_aftermath (test_organism.NarrativeTests.test_phrase_memory_turns_held_cadence_into_rupture_then_aftermath) ... ok
+test_predictable_motion_builds_expectation (test_organism.NarrativeTests.test_predictable_motion_builds_expectation) ... ok
+test_resolution_requires_prior_tension_and_release (test_organism.NarrativeTests.test_resolution_requires_prior_tension_and_release) ... ok
+test_silence_does_not_prime_a_notification_as_narrative_interruption (test_organism.NarrativeTests.test_silence_does_not_prime_a_notification_as_narrative_interruption) ... ok
+test_radio_assigns_one_stable_speaker_while_other_bodies_listen (test_organism.RadioSpeechEmbodimentTests.test_radio_assigns_one_stable_speaker_while_other_bodies_listen) ... ok
+test_radio_pause_releases_the_speaking_body_without_a_global_hit (test_organism.RadioSpeechEmbodimentTests.test_radio_pause_releases_the_speaking_body_without_a_global_hit) ... ok
+test_radio_requires_sustained_timbre_change_before_a_speaker_handoff (test_organism.RadioSpeechEmbodimentTests.test_radio_requires_sustained_timbre_change_before_a_speaker_handoff) ... ok
+test_attention_color_is_not_spent_on_ordinary_body_intensity (test_organism.RenderingBudgetTests.test_attention_color_is_not_spent_on_ordinary_body_intensity) ... ok
+test_audio_observation_does_not_require_a_physics_step (test_organism.RenderingBudgetTests.test_audio_observation_does_not_require_a_physics_step) ... ok
+test_contour_fluid_stays_centered_and_bounded_across_review_matrix (test_organism.RenderingBudgetTests.test_contour_fluid_stays_centered_and_bounded_across_review_matrix) ... ok
+test_contour_fluid_step_skips_semantic_field_rasterization (test_organism.RenderingBudgetTests.test_contour_fluid_step_skips_semantic_field_rasterization) ... ok
+test_low_display_cadence_preserves_elapsed_physics_time (test_organism.RenderingBudgetTests.test_low_display_cadence_preserves_elapsed_physics_time) ... ok
+test_review_sequence_stays_legible_in_every_tile_habitat (test_organism.RenderingBudgetTests.test_review_sequence_stays_legible_in_every_tile_habitat) ... ok
+test_rotating_surface_faces_use_the_ordinary_palette_colors (test_organism.RenderingBudgetTests.test_rotating_surface_faces_use_the_ordinary_palette_colors) ... ok
+test_semantic_field_keeps_mass_surface_and_attention_separate (test_organism.RenderingBudgetTests.test_semantic_field_keeps_mass_surface_and_attention_separate) ... ok
+test_silence_keeps_readable_bodies_and_negative_space (test_organism.RenderingBudgetTests.test_silence_keeps_readable_bodies_and_negative_space) ... ok
+test_terminal_columns_interpolate_instead_of_repeating_blocks (test_organism.RenderingBudgetTests.test_terminal_columns_interpolate_instead_of_repeating_blocks) ... ok
+test_terminal_transfer_curve_reserves_peak_for_attention (test_organism.RenderingBudgetTests.test_terminal_transfer_curve_reserves_peak_for_attention) ... ok
+test_transient_attention_is_local_and_does_not_wash_out_field (test_organism.RenderingBudgetTests.test_transient_attention_is_local_and_does_not_wash_out_field) ... ok
+test_compact_defaults_resolve_to_selected_direction (test_organism.SelectedDirectionTests.test_compact_defaults_resolve_to_selected_direction) ... ok
+test_default_is_the_canonical_listening_posture (test_organism.SelectedDirectionTests.test_default_is_the_canonical_listening_posture) ... ok
+test_listening_control_changes_context_without_resetting_bodies (test_organism.SelectedDirectionTests.test_listening_control_changes_context_without_resetting_bodies) ... ok
+test_operating_modes_do_not_replace_the_canonical_appearance (test_organism.SelectedDirectionTests.test_operating_modes_do_not_replace_the_canonical_appearance) ... ok
+test_operating_modes_preserve_selected_semantic_material (test_organism.SelectedDirectionTests.test_operating_modes_preserve_selected_semantic_material) ... ok
+test_cooling_thickens_settles_and_releases_pressure_history (test_organism.ThermalVolumeTests.test_cooling_thickens_settles_and_releases_pressure_history) ... ok
+test_fast_volume_hit_disturbs_only_its_authored_target (test_organism.ThermalVolumeTests.test_fast_volume_hit_disturbs_only_its_authored_target) ... ok
+test_nearby_warm_volume_bodies_form_a_bounded_mutual_bridge (test_organism.ThermalVolumeTests.test_nearby_warm_volume_bodies_form_a_bounded_mutual_bridge) ... ok
+test_only_one_warm_bridge_pair_is_active_and_cooling_releases_it (test_organism.ThermalVolumeTests.test_only_one_warm_bridge_pair_is_active_and_cooling_releases_it) ... ok
+test_sustained_pressure_warms_and_lifts_volume_wax_above_cold_wax (test_organism.ThermalVolumeTests.test_sustained_pressure_warms_and_lifts_volume_wax_above_cold_wax) ... ok
+test_thermal_anchors_compress_each_role_into_the_central_vessel (test_organism.ThermalVolumeTests.test_thermal_anchors_compress_each_role_into_the_central_vessel) ... ok
+test_thermal_state_is_inactive_for_the_existing_fluid_text_physics_path (test_organism.ThermalVolumeTests.test_thermal_state_is_inactive_for_the_existing_fluid_text_physics_path) ... ok
+test_volume_caps_pairwise_cast_without_changing_fluid_population (test_organism.ThermalVolumeTests.test_volume_caps_pairwise_cast_without_changing_fluid_population) ... ok
+test_volume_keeps_nonbridged_cores_separated_during_sustained_heat (test_organism.ThermalVolumeTests.test_volume_keeps_nonbridged_cores_separated_during_sustained_heat) ... ok
+test_volume_preserves_authored_identity_phase_and_independent_motion (test_organism.ThermalVolumeTests.test_volume_preserves_authored_identity_phase_and_independent_motion) ... ok
+test_volume_selects_the_strongest_nearby_warm_bridge_pair (test_organism.ThermalVolumeTests.test_volume_selects_the_strongest_nearby_warm_bridge_pair) ... ok
+test_app_reexports_the_renderer_neutral_runtime_field (test_presentation.PresentationFrameTests.test_app_reexports_the_renderer_neutral_runtime_field) ... ok
+test_lava_field_exposes_the_live_organism_world_as_one_read_only_frame (test_presentation.PresentationFrameTests.test_lava_field_exposes_the_live_organism_world_as_one_read_only_frame) ... ok
+test_compact_resize_race_does_not_crash_renderer (test_runtime.RuntimeTests.test_compact_resize_race_does_not_crash_renderer) ... ok
+test_fluid_material_survives_live_resize_and_restores_terminal (test_runtime.RuntimeTests.test_fluid_material_survives_live_resize_and_restores_terminal) ... ok
+test_organism_keeps_reexporting_the_signal_contract (test_signals.SignalCompatibilityTests.test_organism_keeps_reexporting_the_signal_contract) ... ok
+test_controls_and_invisible_formatting_become_spaces (test_text.DisplayTextTests.test_controls_and_invisible_formatting_become_spaces) ... ok
+test_limit_applies_after_normalization (test_text.DisplayTextTests.test_limit_applies_after_normalization) ... ok
+test_live_motion_analysis_stops_capture_and_writes_bounded_report (test_trace.MotionAnalysisTests.test_live_motion_analysis_stops_capture_and_writes_bounded_report) ... ok
+test_motion_analyzer_keeps_derived_body_telemetry_without_pcm (test_trace.MotionAnalysisTests.test_motion_analyzer_keeps_derived_body_telemetry_without_pcm) ... ok
+test_one_shot_trace_stops_capture_and_writes_a_bounded_report (test_trace.TraceTests.test_one_shot_trace_stops_capture_and_writes_a_bounded_report) ... ok
+test_recorder_keeps_feature_values_not_audio (test_trace.TraceTests.test_recorder_keeps_feature_values_not_audio) ... ok
+test_app_reexports_terminal_ui_contract (test_tui.TuiBoundaryTests.test_app_reexports_terminal_ui_contract) ... ok
+test_focus_reports_do_not_quit_tui (test_tui.TuiBoundaryTests.test_focus_reports_do_not_quit_tui) ... ok
+test_context_scales_the_same_audio_without_reinterpreting_it (test_wax.WaxStateTests.test_context_scales_the_same_audio_without_reinterpreting_it) ... ok
+test_heat_rises_above_a_cooling_vessel (test_wax.WaxStateTests.test_heat_rises_above_a_cooling_vessel) ... ok
+test_sustained_heat_merges_wax_then_cooling_returns_two_lobes (test_wax.WaxStateTests.test_sustained_heat_merges_wax_then_cooling_returns_two_lobes) ... ok
+test_transient_creates_one_local_bounded_disturbance (test_wax.WaxStateTests.test_transient_creates_one_local_bounded_disturbance) ... ok
+test_wax_uses_fixed_memory_and_bounded_mass (test_wax.WaxStateTests.test_wax_uses_fixed_memory_and_bounded_mass) ... ok
+test_config_propagation (test_window.WindowRendererTests.test_config_propagation) ... ERROR
+test_demo_mode_lifecycle (test_window.WindowRendererTests.test_demo_mode_lifecycle) ... ERROR
+test_duplicate_close_events_are_harmless (test_window.WindowRendererTests.test_duplicate_close_events_are_harmless) ... ERROR
+test_flatten_points (test_window.WindowRendererTests.test_flatten_points) ... ok
+test_keyboard_interrupt_cleans_up (test_window.WindowRendererTests.test_keyboard_interrupt_cleans_up) ... ERROR
+test_lifecycle_capture_starts_and_stops_exactly_once (test_window.WindowRendererTests.test_lifecycle_capture_starts_and_stops_exactly_once) ... ERROR
+test_missing_tkinter_raises_runtime_error (test_window.WindowRendererTests.test_missing_tkinter_raises_runtime_error) ... ok
+test_partial_setup_initialization_failure_cleans_up (test_window.WindowRendererTests.test_partial_setup_initialization_failure_cleans_up) ... ERROR
+test_resize_events_clamp_dimensions (test_window.WindowRendererTests.test_resize_events_clamp_dimensions) ... ERROR
+test_rgb_to_hex_formatting (test_window.WindowRendererTests.test_rgb_to_hex_formatting) ... ok
+test_run_window_invokes_companion (test_window.WindowRendererTests.test_run_window_invokes_companion) ... ok
+test_runtime_audio_error_propagates (test_window.WindowRendererTests.test_runtime_audio_error_propagates) ... ERROR
+test_tcl_error_raises_runtime_error (test_window.WindowRendererTests.test_tcl_error_raises_runtime_error) ... ERROR
+test_tk_callback_exception_propagates_nonzero (test_window.WindowRendererTests.test_tk_callback_exception_propagates_nonzero) ... ERROR
+
+======================================================================
+ERROR: test_config_propagation (test_window.WindowRendererTests.test_config_propagation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 210, in test_config_propagation
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_demo_mode_lifecycle (test_window.WindowRendererTests.test_demo_mode_lifecycle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 190, in test_demo_mode_lifecycle
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_duplicate_close_events_are_harmless (test_window.WindowRendererTests.test_duplicate_close_events_are_harmless)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 79, in test_duplicate_close_events_are_harmless
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_keyboard_interrupt_cleans_up (test_window.WindowRendererTests.test_keyboard_interrupt_cleans_up)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 94, in test_keyboard_interrupt_cleans_up
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_lifecycle_capture_starts_and_stops_exactly_once (test_window.WindowRendererTests.test_lifecycle_capture_starts_and_stops_exactly_once)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 52, in test_lifecycle_capture_starts_and_stops_exactly_once
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_partial_setup_initialization_failure_cleans_up (test_window.WindowRendererTests.test_partial_setup_initialization_failure_cleans_up)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 154, in test_partial_setup_initialization_failure_cleans_up
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_resize_events_clamp_dimensions (test_window.WindowRendererTests.test_resize_events_clamp_dimensions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 171, in test_resize_events_clamp_dimensions
+    mock_tk, mock_root, mock_canvas = _make_mock_tk()
+                                      ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_runtime_audio_error_propagates (test_window.WindowRendererTests.test_runtime_audio_error_propagates)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 132, in test_runtime_audio_error_propagates
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_tcl_error_raises_runtime_error (test_window.WindowRendererTests.test_tcl_error_raises_runtime_error)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 35, in test_tcl_error_raises_runtime_error
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+======================================================================
+ERROR: test_tk_callback_exception_propagates_nonzero (test_window.WindowRendererTests.test_tk_callback_exception_propagates_nonzero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "<source>/tests/test_window.py", line 110, in test_tk_callback_exception_propagates_nonzero
+    mock_tk, mock_root, _ = _make_mock_tk()
+                            ~~~~~~~~~~~~~^^
+  File "<source>/tests/test_window.py", line 230, in _make_mock_tk
+    import tkinter
+ModuleNotFoundError: No module named 'tkinter'
+
+----------------------------------------------------------------------
+Ran 236 tests in 15.162s
+
+FAILED (errors=10)

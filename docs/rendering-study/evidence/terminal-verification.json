@@ -1,0 +1,36 @@
+{
+  "checked_at": "2026-10-04T16:05:34.334265+00:00",
+  "python": "3.13.5",
+  "source_verification": {
+    "verified_files": 72,
+    "commit": "f79516e82b9b6383ea1d169be2937c9ba6a5a93d"
+  },
+  "tests_run": 222,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 15.193,
+  "excluded_tests": [
+    "test_window.WindowRendererTests.test_config_propagation",
+    "test_window.WindowRendererTests.test_demo_mode_lifecycle",
+    "test_window.WindowRendererTests.test_duplicate_close_events_are_harmless",
+    "test_window.WindowRendererTests.test_flatten_points",
+    "test_window.WindowRendererTests.test_keyboard_interrupt_cleans_up",
+    "test_window.WindowRendererTests.test_lifecycle_capture_starts_and_stops_exactly_once",
+    "test_window.WindowRendererTests.test_missing_tkinter_raises_runtime_error",
+    "test_window.WindowRendererTests.test_partial_setup_initialization_failure_cleans_up",
+    "test_window.WindowRendererTests.test_resize_events_clamp_dimensions",
+    "test_window.WindowRendererTests.test_rgb_to_hex_formatting",
+    "test_window.WindowRendererTests.test_run_window_invokes_companion",
+    "test_window.WindowRendererTests.test_runtime_audio_error_propagates",
+    "test_window.WindowRendererTests.test_tcl_error_raises_runtime_error",
+    "test_window.WindowRendererTests.test_tk_callback_exception_propagates_nonzero"
+  ],
+  "exclusion_reason": "All of test_window is excluded from this terminal/core subset; the original full-suite result is retained separately.",
+  "scope": "Upstream tests with mocks and synthetic inputs; no live audio or GUI validation",
+  "environment": {
+    "PYTHONPATH": "<source>/src",
+    "TERM": "xterm-256color",
+    "LC_ALL": "C.UTF-8"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "source_commit": "f79516e82b9b6383ea1d169be2937c9ba6a5a93d",
+  "started_at": "2026-10-04T15:49:32.058099+00:00",
+  "completed_at": "2026-10-04T15:50:26.432473+00:00",
+  "environment": {
+    "python": "3.13.5",
+    "architecture": "x86_64",
+    "system": "Linux",
+    "cpu": "Intel(R) Core(TM) i5-4570 CPU @ 3.20GHz"
+  },
+  "frames_per_run": 120,
+  "repeats_per_method_per_size": 5,
+  "recorded_runs": 30,
+  "warmup": "20 unrecorded frames for each method at each size",
+  "order": "Alternating path order across repeats; viewport sizes run in ascending order",
+  "statistic": "Median of five run-average wall-clock times per simulated frame; not frame-level latency percentiles",
+  "raw_csv_sha256": "2f889bf344283181f6f9e3d9a39fbe1c528943230f3aec439a1cef29de3e4fe7",
+  "excluded": [
+    "live PCM capture",
+    "curses writes",
+    "terminal emulator",
+    "compositor",
+    "power measurement"
+  ],
+  "comparison_boundary": "Two existing rendering strategies with different field representations; not a pixel-equivalent microbenchmark",
+  "results": [
+    {
+      "width": 60,
+      "height": 18,
+      "cells": 1080,
+      "methods": {
+        "scalar_field": {
+          "median_ms_per_frame": 11.068706133179754,
+          "min_ms_per_frame": 11.035993208254999,
+          "max_ms_per_frame": 11.124282558254587
+        },
+        "analytic_contour": {
+          "median_ms_per_frame": 3.2826280165560697,
+          "min_ms_per_frame": 3.271158225106774,
+          "max_ms_per_frame": 3.5271463416089923
+        }
+      },
+      "ratio_of_run_medians": 3.371903876209634
+    },
+    {
+      "width": 90,
+      "height": 24,
+      "cells": 2160,
+      "methods": {
+        "scalar_field": {
+          "median_ms_per_frame": 21.991947724988375,
+          "min_ms_per_frame": 21.846005591699697,
+          "max_ms_per_frame": 22.02806933322184
+        },
+        "analytic_contour": {
+          "median_ms_per_frame": 4.693303333139435,
+          "min_ms_per_frame": 4.656861791590927,
+          "max_ms_per_frame": 4.762262458340653
+        }
+      },
+      "ratio_of_run_medians": 4.6858142685351565
+    },
+    {
+      "width": 120,
+      "height": 30,
+      "cells": 3600,
+      "methods": {
+        "scalar_field": {
+          "median_ms_per_frame": 39.69938580000113,
+          "min_ms_per_frame": 39.15486114177232,
+          "max_ms_per_frame": 40.4778186501062
+        },
+        "analytic_contour": {
+          "median_ms_per_frame": 7.074787158247394,
+          "min_ms_per_frame": 6.909419749960459,
+          "max_ms_per_frame": 7.400526433290604
+        }
+      },
+      "ratio_of_run_medians": 5.611389418792874
+    }
+  ]
+}

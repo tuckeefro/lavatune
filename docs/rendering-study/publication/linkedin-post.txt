@@ -1,0 +1,18 @@
+At a 120 × 30 terminal viewport, two rendering strategies in the Python audio visualizer I maintain took 40.16 ms and 7.45 ms per simulated frame.
+
+That is a 5.39× ratio in measured compute time. Here is the scope behind the number.
+
+Lavatune has a scalar-field path that samples every terminal cell and a contour path that works from shape geometry and returns occupied spans.
+
+The comparison covered three viewport sizes, five runs per path and size, and 200 synthetic feature frames per run. The source revision, all 30 observations, and the aggregation code are retained.
+
+A separate replay found that 81.9% of the scalar path's cell evaluations at the largest viewport produced blank glyphs. The contour cache had zero hits in that replay, so the lower-cost strategy was useful while rebuilding its output.
+
+The limits matter: these are different visual representations. The timing excludes live capture and terminal output. It establishes a useful compute difference for this workload; it does not establish end-to-end latency or energy savings.
+
+The article walks through the architecture, measurements, failure logs, and the next experiment that could change the engineering decision.
+
+Lavatune and this analysis were developed with Codex under my direction. The evidence is there to inspect.
+
+Article and reproducible packet:
+https://github.com/tuckeefro/lavatune/tree/docs/rendering-evidence-2026-10/docs/rendering-study

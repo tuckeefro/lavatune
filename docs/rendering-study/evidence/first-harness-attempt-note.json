@@ -1,0 +1,3 @@
+{
+  "reason": "The subset runner inserted src into its own sys.path but omitted PYTHONPATH inherited by PTY child processes. The corrected runner exports the same source path used in the full-suite check. No upstream source was edited."
+}

@@ -1,0 +1,66 @@
+usage: lavatune [-h] [--version] [--config CONFIG]
+                [--theme {soft-afterglow,cool-dense,mono-blocks}]
+                [--list-themes] [--list-backends] [--list-profiles]
+                [--profile {power-save,atlas,responsive}]
+                [--content-mode {auto,music,speech,book}]
+                [--backend {auto,pipewire,pulse,ffmpeg,sox}]
+                [--analysis {atlas,bands}] [--source SOURCE] [--show-stats]
+                [--no-stats] [--compact-tile]
+                [--max-visual-width MAX_VISUAL_WIDTH]
+                [--max-visual-height MAX_VISUAL_HEIGHT] [--demo]
+                [--renderer {tui,canvas,window,kitty}] [--canvas] [--window]
+                [--doctor] [--no-audio-probe] [--trace-once SECONDS]
+                [--trace-output TRACE_OUTPUT] [--motion-analysis SECONDS]
+                [--motion-output MOTION_OUTPUT]
+
+A local-first terminal and desktop acoustic organism for Linux and macOS.
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+  --config CONFIG       Path to a TOML config override.
+  --theme {soft-afterglow,cool-dense,mono-blocks}
+                        Built-in theme to use without a config file.
+  --list-themes         List built-in themes and exit.
+  --list-backends       List supported audio backends and exit.
+  --list-profiles       List runtime power profiles and exit.
+  --profile {power-save,atlas,responsive}
+                        Runtime profile for latency and CPU usage.
+  --content-mode {auto,music,speech,book}
+                        Force audio response tuning instead of auto-detecting
+                        content.
+  --backend {auto,pipewire,pulse,ffmpeg,sox}
+                        Audio backend override.
+  --analysis {atlas,bands}
+                        Audio analysis model override.
+  --source SOURCE       Explicit audio monitor/source name for your Linux
+                        audio stack.
+  --show-stats          Show backend/profile status in the terminal footer at
+                        startup.
+  --no-stats            Hide live analysis stats.
+  --compact-tile        Keep the visual field small inside a larger terminal
+                        tile.
+  --max-visual-width MAX_VISUAL_WIDTH
+                        Maximum visual field width in terminal columns.
+  --max-visual-height MAX_VISUAL_HEIGHT
+                        Maximum visual field height in terminal rows.
+  --demo                Run without live audio using a synthetic signal.
+  --renderer {tui,canvas,window,kitty}
+                        Presentation renderer: terminal-native tui (default),
+                        Kitty/Ghostty pixel wax, experimental canvas, or
+                        standalone window.
+  --canvas              Compatibility alias for --renderer canvas.
+  --window              Open standalone floating window renderer.
+  --doctor              Check the local environment and audio path, then exit.
+  --no-audio-probe      With --doctor, skip the short live PCM probe.
+  --trace-once SECONDS  Capture local feature values for one bounded pass,
+                        then exit (5-600 seconds; no audio is recorded).
+  --trace-output TRACE_OUTPUT
+                        Feature-trace path (default: /tmp/lavatune-
+                        trace.json).
+  --motion-analysis SECONDS
+                        Analyze live production motion for one bounded pass,
+                        then exit (5-600 seconds; no PCM is stored).
+  --motion-output MOTION_OUTPUT
+                        Motion-analysis path (default: /tmp/lavatune-
+                        motion.json).
