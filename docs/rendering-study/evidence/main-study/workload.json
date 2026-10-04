@@ -1,0 +1,42 @@
+{
+  "source_commit": "f79516e82b9b6383ea1d169be2937c9ba6a5a93d",
+  "scope": "Separate diagnostic replay; emitted cells do not count every internal contour evaluation, and the two outputs are not equivalent.",
+  "results": [
+    {
+      "width": 60,
+      "height": 18,
+      "frames": 200,
+      "scalar_cell_evaluations": 216000,
+      "scalar_nonblank_cells": 29082,
+      "scalar_blank_fraction": 0.8653611111111111,
+      "contour_emitted_cells": 58132,
+      "contour_mean_emitted_cells_per_frame": 290.66,
+      "contour_cache_hits": 1,
+      "contour_cache_misses": 199
+    },
+    {
+      "width": 90,
+      "height": 24,
+      "frames": 200,
+      "scalar_cell_evaluations": 432000,
+      "scalar_nonblank_cells": 63969,
+      "scalar_blank_fraction": 0.8519236111111111,
+      "contour_emitted_cells": 83260,
+      "contour_mean_emitted_cells_per_frame": 416.3,
+      "contour_cache_hits": 0,
+      "contour_cache_misses": 200
+    },
+    {
+      "width": 120,
+      "height": 30,
+      "frames": 200,
+      "scalar_cell_evaluations": 720000,
+      "scalar_nonblank_cells": 130462,
+      "scalar_blank_fraction": 0.8188027777777778,
+      "contour_emitted_cells": 128392,
+      "contour_mean_emitted_cells_per_frame": 641.96,
+      "contour_cache_hits": 0,
+      "contour_cache_misses": 200
+    }
+  ]
+}

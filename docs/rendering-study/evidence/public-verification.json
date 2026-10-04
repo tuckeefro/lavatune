@@ -1,0 +1,36 @@
+{
+  "started_at": "2026-10-04T15:48:20.973762+00:00",
+  "python": "3.13.5",
+  "checks": [
+    {
+      "name": "lavatune-public-tests",
+      "command": [
+        "/usr/bin/python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-v"
+      ],
+      "exit_code": 1,
+      "seconds": 15.447,
+      "test_count": 236,
+      "log": "evidence/lavatune-public-tests.log"
+    },
+    {
+      "name": "lavatune-public-cli",
+      "command": [
+        "/usr/bin/python3",
+        "-m",
+        "lavatune",
+        "--help"
+      ],
+      "exit_code": 0,
+      "seconds": 0.103,
+      "test_count": null,
+      "log": "evidence/lavatune-public-cli.log"
+    }
+  ],
+  "completed_at": "2026-10-04T15:48:36.523656+00:00"
+}

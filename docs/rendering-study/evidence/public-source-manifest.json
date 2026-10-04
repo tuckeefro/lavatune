@@ -1,0 +1,367 @@
+{
+  "repository": "tuckeefro/lavatune",
+  "commit": "f79516e82b9b6383ea1d169be2937c9ba6a5a93d",
+  "files": [
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "sha": "4bff7cb300ded49400811f7bd9126a5b03fc2fb5",
+      "sha256": "f8fe6611bff43396475aeb2a10eeccf7130f1ff3ac22d1089748324fbc091a7e"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "sha": "0086358db1eb971c0cfa8739c27518bbc18a5ff4",
+      "sha256": "13064e7bea658e01e718b414fbb7b3b244f36411fe25ee2055c151f7b534547a"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/feature_request.yml",
+      "sha": "292504b871780dd2efe6ad48e69e40c660e30b15",
+      "sha256": "c97b484a1f3caca5c3ec2895ed0c820a041e405683d5acf5f77412003c61d723"
+    },
+    {
+      "path": ".github/dependabot.yml",
+      "sha": "854e40cb654fe46acf4b69fb0c5868db9c2215e3",
+      "sha256": "5c0611e4b151fe82c9df469164088ec9db1b3c4fc8bc0db6db4fdb6de9aff9f4"
+    },
+    {
+      "path": ".github/pull_request_template.md",
+      "sha": "9ce941c6631cfa5a55bcf327ed4458cbc128183f",
+      "sha256": "ce7f866e6d3faa231dbda4c7a689db6be46cba913ca52a6405b2c4e47718174c"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha": "ce3be7ee308194716fde82e872cd79dc8177b962",
+      "sha256": "72baa8a1a5a8f1de0aa7ad858c79f121893908707ff00e2548a412cb90da7884"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "sha": "5697997389d2a72dfd841aa52d96efc8469bb375",
+      "sha256": "216c0beeea562b444539cf0d46262ee63c041184f4fd3eaee4786c4ed863fc39"
+    },
+    {
+      "path": ".gitignore",
+      "sha": "933f3a9bf68a45933114742d64a2ac8fdcc9417d",
+      "sha256": "e3e5d16b5fd763b5765b238656204a0a9c5c5f0e864e9fb8e35a42a4db794728"
+    },
+    {
+      "path": "AUTHORS.md",
+      "sha": "caa7c215c935ee23560e0eee9a1b7bf072d0183d",
+      "sha256": "d581133cb905f1d747cabb14a82ebe94669fc6a55daf81955a7155715681fc9f"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "sha": "1fe52b786a91b36a11224c4def45e22426202977",
+      "sha256": "3a4260b42a783b3d08abeaf4afd7e6e87ebb3e7971cf8220290f0df711ee9fbf"
+    },
+    {
+      "path": "CODE_OF_CONDUCT.md",
+      "sha": "66d69a5a30678277b817e2f8ccd6558632d38a99",
+      "sha256": "61a92521cdf37f88562e417661f232be850861ff97d02179bdfbbea22d9a055f"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha": "3b8c78892b56ed992b79d5d61a7485d52e6246e4",
+      "sha256": "5f415c7ffaa0399c39a11dd6e5e6d5ce2d28b925dad4842393ae31d898b927a3"
+    },
+    {
+      "path": "LICENSE",
+      "sha": "4c6e989db4e4a09bd68e15a2745b8b48da47d0c6",
+      "sha256": "7e0b460c94154eb20adb7fac6911c248bcca4abe84b6ea0c86f89c8013adfdc2"
+    },
+    {
+      "path": "MANIFEST.in",
+      "sha": "773c52719926c6198dc902c8c6061eb03b289d18",
+      "sha256": "d6ca06e937d26addb509b077553819f35ca54c9a085faf4f898c7f02cc697f84"
+    },
+    {
+      "path": "README.md",
+      "sha": "8e6ed84e5521c233b2535f04cac07961c572811b",
+      "sha256": "03af81d8ccf60ae76d669786dfadd19aadd4783148d7c3452e441ba648b8f64a"
+    },
+    {
+      "path": "SECURITY.md",
+      "sha": "ed180c257a9b28ca5246507e2194ff45eff538ed",
+      "sha256": "0efab63f7741182ba66dfc460c9a487a1efba4d09c589273b58e54b424ba6af2"
+    },
+    {
+      "path": "configs/experimental-volume.toml",
+      "sha": "c8f0d54dad3147cc55050a6267d4c08047dfe1cc",
+      "sha256": "484ed5e2725ed5cab9e72ea512e93a084a05eb9249331da6b24908a63ac08fdb"
+    },
+    {
+      "path": "configs/experimental-wax.toml",
+      "sha": "1a3e0300e1777e90238d3f7ca08b311e75b07034",
+      "sha256": "581b311438a32c0013cc87d090097579f87cd4528d6c67ff7b061cb8a0407bf7"
+    },
+    {
+      "path": "configs/soft-afterglow.toml",
+      "sha": "05819f8555ddda21e0c4f4e83e64808605bc0fa2",
+      "sha256": "c403fbf202f34baf84f06b6ad222a165bc572b29f28596c8055da8fbbe0777a2"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha": "bb067455d3964715a3d06937ddde92706dd62b09",
+      "sha256": "a7421b1796df54f1fc646e01152805374965219aa3d83303027e80500ae57742"
+    },
+    {
+      "path": "docs/DESIGN.md",
+      "sha": "c4bbbd2bcf929c9929ba256e4991d45dfa3f8e48",
+      "sha256": "9e003a6ef13a031a7c41a8d587514e7d33627e4a5b0295e16020e6a4a721730b"
+    },
+    {
+      "path": "docs/MACOS.md",
+      "sha": "d7d4304dde7334afdcedb1ce4ae7d52679ddb7b3",
+      "sha256": "b348505a8f89bfcf7b8e8bbdddcd288dd4a662ad33469d0cf11aa47156be29d4"
+    },
+    {
+      "path": "docs/PERFORMANCE.md",
+      "sha": "33c456f019aa4bd58ef492e79008bd30512a8ec1",
+      "sha256": "cd14084e7b3c554e60d9089c2d4216733e5fdc9e8520ef279626c07cd9c93da0"
+    },
+    {
+      "path": "docs/RELEASING.md",
+      "sha": "bca03b382d6858a7831cf19b6d20bcf19626d4b1",
+      "sha256": "472a25e0f7f281e49844c69c7e5f3ca6990f819f6f6713b20730bd3ea86f3726"
+    },
+    {
+      "path": "docs/TROUBLESHOOTING.md",
+      "sha": "112dff3a79a56b99a0f5bf2258f980e0da49dfa3",
+      "sha256": "d4de43a16f36fc09d1ef260bc027ed0641028891d0f956e6043df9176a05a9c2"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha": "77e037b3ccf03ebce54aad81a3ac313320139edc",
+      "sha256": "2b05175ec067ce3b31bef314083b2c02d626c79873612f5d98a61379c4620a25"
+    },
+    {
+      "path": "scripts/benchmark.py",
+      "sha": "30c26c4ae031f93e321e070f23aa52f8c8379260",
+      "sha256": "4648adcfecfb17a426e571d2303da99fa1f4adc5afa8b9438dfe6b8022b75b49"
+    },
+    {
+      "path": "scripts/benchmark_render.py",
+      "sha": "d2b460c62a4c4261f5ad5074355c10da77416ae5",
+      "sha256": "1d03679655bfd8929a5ce1c58ce9e37009b2c32f8e1f0fa0832c085df813ac3c"
+    },
+    {
+      "path": "scripts/verify_dist.py",
+      "sha": "66c0a366249ee4c29d895b58d173ebb029da2f82",
+      "sha256": "ba929050f532d93162e8b72f0d41b650c5931e2e0c70fe7d6f513c6ea9dd2cee"
+    },
+    {
+      "path": "src/lavatune/__init__.py",
+      "sha": "97540a16c318adbb3fc99da6dc749df92d178562",
+      "sha256": "88397dfa1ac45fb77b57de453a769a71af39f41ba75dc7b1d3e807f159605aa8"
+    },
+    {
+      "path": "src/lavatune/__main__.py",
+      "sha": "3fbb75ba35fcbe25d286469afd3f1de332cf1dc2",
+      "sha256": "2f3205dd779cd654d3335ad482c738126337e0031fb99f9fcb72630187ad2bea"
+    },
+    {
+      "path": "src/lavatune/app.py",
+      "sha": "75c4bedd0ee692fd696e83e797b1e6479a32071e",
+      "sha256": "5c4c73e409866c4c14966c2d1b2636486514778660e55414488bcbce7a51d167"
+    },
+    {
+      "path": "src/lavatune/audio.py",
+      "sha": "4d224a85301dd14d51221520a3f2920a242a95a7",
+      "sha256": "28b03b1f1044bcface0e544b8081217fb7ccd62dc905e898dc0b72061b785bce"
+    },
+    {
+      "path": "src/lavatune/canvas.py",
+      "sha": "c2d62339da09ac6339b11729db18d222496f663a",
+      "sha256": "2a1807bf5dbfeb429c5d05b3c0489f80ca2a42cf8edc1be53ba1e89a9e68992f"
+    },
+    {
+      "path": "src/lavatune/config.py",
+      "sha": "b6a7dce892d3fcb75bf5fc8c1c1b9c536a6c6454",
+      "sha256": "3c974c0050b0c6b8bd3a86c224dc194e75a1414a648747e2e910be931589f110"
+    },
+    {
+      "path": "src/lavatune/doctor.py",
+      "sha": "749b701fa7c078d2016ea273e3f4b08edd47976b",
+      "sha256": "9232ba301d3fde22a830eb137db2f1ff5936094fe565aa869031dccb81404914"
+    },
+    {
+      "path": "src/lavatune/fluid.py",
+      "sha": "19ec3e4ad4faa9278ad69340282351f5a61f04b3",
+      "sha256": "57a12dd25c5e8a63f3821a1f65a4d8e2a7e6bf88dbbcab4930885a16e9cc4767"
+    },
+    {
+      "path": "src/lavatune/kitty.py",
+      "sha": "9b535a0da7cdaaa614fe1e62ea6e241e000192d6",
+      "sha256": "2c92c2d1d32d39e0e20dde5f6368cb629964e8e4571f97f0722f17c8f8731bbf"
+    },
+    {
+      "path": "src/lavatune/kitty_v2.py",
+      "sha": "c1a04a7d86b86103165d8d395f2ff7202ffbb3d9",
+      "sha256": "969a3a2ece56890c307b560ed5c2ad913eb54d74ce7e78e5b75bc670c85353e3"
+    },
+    {
+      "path": "src/lavatune/material_core.py",
+      "sha": "d7ebc7e5275ed759e753d44f29770d605406e9a5",
+      "sha256": "aa590c769ef6c2ba0199a0f1204ba43af1093d6dd6d66a009a4044e85bf606a0"
+    },
+    {
+      "path": "src/lavatune/materials.py",
+      "sha": "1ad845f363a9588e1b4ac36aa622c8f8eefee497",
+      "sha256": "cf8883e04db980154953550c6b05b955bfb478ee254577f1d6b5503ac29301c8"
+    },
+    {
+      "path": "src/lavatune/media.py",
+      "sha": "e36caa4e41a208163ca22011f6f2a8ba49acc02c",
+      "sha256": "a52e5022a1d9a63c4b4f44b81634607f40fcf37557669ee21829b5dfa0e35c08"
+    },
+    {
+      "path": "src/lavatune/motion.py",
+      "sha": "68dab7d2e520356e33581d41671faa5b606f133a",
+      "sha256": "b264e92dfd8b85de1c62f517c53ec2e68a33fc48e322c55c3a6ace485174dec9"
+    },
+    {
+      "path": "src/lavatune/organism.py",
+      "sha": "62c2e0fe20c5e403e81cd084abcefa9961523227",
+      "sha256": "3ab58c2b00faa10f7dea0d7472867dbacaef63c0ef252094ec92be7108dc7b4f"
+    },
+    {
+      "path": "src/lavatune/presentation.py",
+      "sha": "1d80094ae082281e30224aa7b8c807a568a99f99",
+      "sha256": "d8baae1aff3af48a3c5a4e595ebba08b1140d1ee214f1adb941f13dff601a5f3"
+    },
+    {
+      "path": "src/lavatune/runtime.py",
+      "sha": "ea097148aa59e7fe3959a85e8881e65a7e307d9b",
+      "sha256": "bce73a451c8559b47865727e10c73d7f1df54380d08f787637ff44a6dc08ce7f"
+    },
+    {
+      "path": "src/lavatune/signals.py",
+      "sha": "facc71b139c0eb8e49741f4fb7ee661d164cda56",
+      "sha256": "2497c4b7669a39107fd6b39977d52520dd7963184ce380bf57d4577281ece4fe"
+    },
+    {
+      "path": "src/lavatune/text.py",
+      "sha": "8c823b5df61d52582a3d132ba718e351495d3bfc",
+      "sha256": "cb2f2e9b545dd47b080fd346adaa3e4030967846d35e65d8149fb0b0a3398870"
+    },
+    {
+      "path": "src/lavatune/trace.py",
+      "sha": "35c376f6b591d5a9a34488e25e5347602c506c18",
+      "sha256": "e1a4565d0059efecd09272248a73c48bb1f4504664bf05b0ea5c27dc5e4742cb"
+    },
+    {
+      "path": "src/lavatune/tui.py",
+      "sha": "9fa88d79d56c7c8908729811a6bf3c0666dc4e84",
+      "sha256": "951baa501e2fa9c8da2a6f4bfea962f3113bc1c8dad98fe1dc958dbc8a702ac5"
+    },
+    {
+      "path": "src/lavatune/volume.py",
+      "sha": "d02223f14cc8c39e40102cdcc7b969cbbabc7137",
+      "sha256": "936b141882d1458fda99c8c2d0b3512335eb23456e59152d3664d8efa7a1a738"
+    },
+    {
+      "path": "src/lavatune/wax.py",
+      "sha": "b76397386d6bd1459e585f81292b5f3e651b9701",
+      "sha256": "00e03dac05f728ced48eeb241f3e9ed5837958356d65f04b19c70288bff3a98c"
+    },
+    {
+      "path": "src/lavatune/window.py",
+      "sha": "1d99eb317a79127a7a55e50238d64ab39065c963",
+      "sha256": "3a0e887b0749c30c5ee8e87832a1f02af5cb5abd26a6e4231201001e44e03e6b"
+    },
+    {
+      "path": "tests/test_audio.py",
+      "sha": "a0c6b75d35d747a63db86f502695b4b4c187e01c",
+      "sha256": "1cc84cf2fffd782a017676c42377fda07b0009da9d4de7e95adaf35aa3c9a56e"
+    },
+    {
+      "path": "tests/test_canvas.py",
+      "sha": "063cb6489f30835106693a6a8206c8f33e7afd0b",
+      "sha256": "016ab3d40377c57de5efb22c0567bdb6d2a0645c0e61d580408f2b5db012185d"
+    },
+    {
+      "path": "tests/test_cli.py",
+      "sha": "e6ba75acff2c46fbd20581b1f1ee8bb2a65bfedd",
+      "sha256": "615498d9bc108f01c95c425f594a9836c1645c7011afcdbc267be64c8d8b59d4"
+    },
+    {
+      "path": "tests/test_config.py",
+      "sha": "778397cf438d51ded6394718378d84ab4364272c",
+      "sha256": "f2f422a2034d94f6be3c3d6bf62c983c93a568fa503bf0a2da8dcdd78a012891"
+    },
+    {
+      "path": "tests/test_doctor.py",
+      "sha": "eea0efc84bc951d355b96ad01efe2156043b584d",
+      "sha256": "bb715dfd06cfb16a90b51712df5d1e47be15d26553f513385cd7acbb199b71f1"
+    },
+    {
+      "path": "tests/test_kitty.py",
+      "sha": "246158f030642a05b765d8219f1a6bf33b73ae98",
+      "sha256": "a389152ae951fa4515cca7088776f81321acb683641a4673d564085e71049663"
+    },
+    {
+      "path": "tests/test_kitty_v2.py",
+      "sha": "8991bee4b55e600380884721da69e6cc19a8aaec",
+      "sha256": "05661825651c5bb81691478eaaa72ba612cb348b7b98626066dc63e6c4acb39d"
+    },
+    {
+      "path": "tests/test_layout.py",
+      "sha": "c7f7aef8a14120f6bd02e75d7ea83c6cda0ddb21",
+      "sha256": "d2401b706f04b7d6817311d2fc569abd6d8597294ba117e7391cfe01e4b0544e"
+    },
+    {
+      "path": "tests/test_materials.py",
+      "sha": "1efe0c386cac4ded1d5f16adb131e37c29d5730a",
+      "sha256": "c8ae0e4461b814d935dd94f42debb91d40dcde610019edcd7b6d50020994d669"
+    },
+    {
+      "path": "tests/test_media.py",
+      "sha": "c8f5bcbc40cb2ba1579b0dc26b6b857ad161461c",
+      "sha256": "a4d0de56f3b5e4f0808bf06845b127ccec80b56c5cad106c694529d3a6f6c4c1"
+    },
+    {
+      "path": "tests/test_organism.py",
+      "sha": "bff247d37e0eccdfecc07fe63a492620371c0128",
+      "sha256": "cbc465b473bd38e46c1096425e35f52b7834a0db480abb6732581dc86a8c3e8e"
+    },
+    {
+      "path": "tests/test_presentation.py",
+      "sha": "40e3795f1e1ec43b19c277049c6d58ee66989f9a",
+      "sha256": "24ba23afb4db9ef2080a1dfff80d4094665a4bb21dd028c773d94eb7d5a55e05"
+    },
+    {
+      "path": "tests/test_runtime.py",
+      "sha": "f9a79494eee9f44fb8fd1fa2569a3390f9302164",
+      "sha256": "2cf39cfd8080834b78193980af84c510e4423a5f3a47e4986dd6f3ea9c12da52"
+    },
+    {
+      "path": "tests/test_signals.py",
+      "sha": "2cc70906ad28669cc6ea61146f93c793c9bb29e2",
+      "sha256": "ab81c29987b3c6e7844c6b101bad446e72499cd00b91ab0e4e04fc7a9da21e4b"
+    },
+    {
+      "path": "tests/test_text.py",
+      "sha": "cf34241dc8a82cca2208acd01af8e1602ad0c27e",
+      "sha256": "9f1f0f009167f005af8a8ece137a036628d0a7d8562a7035ffe8160ea8cc671d"
+    },
+    {
+      "path": "tests/test_trace.py",
+      "sha": "194734007612e59a2fe313a52dce98742a7c9e99",
+      "sha256": "8d9331f704ac226d846888e2b63c5538852be55f88ab576a178f39c133e88803"
+    },
+    {
+      "path": "tests/test_tui.py",
+      "sha": "22e5726b1dc2e2ef46ccbad6d7e501b43e1384a8",
+      "sha256": "73e2937e88dc6078f588ef9b520b156b4f760b8056c9f597c90651e95cd1c0f9"
+    },
+    {
+      "path": "tests/test_wax.py",
+      "sha": "f33e525cb6fd5b51e63840f75b8f07ce07d5526f",
+      "sha256": "14fb48afc39d826d08361faedf8ff533fe4f07b2caf7c44c4bbfbcc8654836a6"
+    },
+    {
+      "path": "tests/test_window.py",
+      "sha": "bbfa077a6be980ce656e4a98e009a2cf5eae187c",
+      "sha256": "243bcfdfcd09a7df97c5e28b9c2cba4071fd1e52da5c28357a34fafb210ca2d6"
+    }
+  ],
+  "verified_git_blobs": true
+}

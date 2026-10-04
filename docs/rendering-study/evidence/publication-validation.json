@@ -1,0 +1,27 @@
+{
+  "article_words": 1011,
+  "linkedin_post_characters": 1431,
+  "html": {
+    "single_title": true,
+    "scripts": 0,
+    "embedded_images": 1,
+    "image_alt_text": true
+  },
+  "pdf": {
+    "pages": 4,
+    "text_extracted": true,
+    "key_claims_match_article": true,
+    "visually_inspected_pages": [
+      1,
+      3,
+      4
+    ]
+  },
+  "figure": {
+    "width": 1600,
+    "height": 1000,
+    "visually_inspected": true
+  },
+  "pdf_sha256": "42cb24b76819b8dd9966aaf90e2ef8ce002ec79666ccef437b2a769c7a2bcabd",
+  "browser_preview": "Unavailable: Chromium socket setup blocked in both attempted modes. PDF directly rendered and visually inspected."
+}
